@@ -15,27 +15,30 @@ const auth = new google.auth.GoogleAuth({
   ],
 });
 
-const spreadsheetPath = path.join(__dirname, 'spreadsheet-startup.json');
-
 const hebrewMonths = [
   "ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני",
   "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"
 ];
 
-async function ensureSpreadsheetExists(instanceName) {
-  let spreadsheetId;
+async function findOrCreateSpreadsheet(instanceName) {
+  const authClient = await auth.getClient();
+  const drive = google.drive({ version: 'v3', auth: authClient });
   
-  if (fs.existsSync(spreadsheetPath)) {
-    const meta = require(spreadsheetPath);
-    spreadsheetId = meta.id;
-    console.log(`📄 Using existing spreadsheet: ${spreadsheetId}`);
+  // חיפוש הגיליון לפי שם
+  const title = `StartUp-Log-${instanceName}`;
+  const response = await drive.files.list({
+    q: `name='${title}' and mimeType='application/vnd.google-apps.spreadsheet'`,
+    fields: 'files(id, name)',
+    spaces: 'drive',
+  });
+
+  if (response.data.files.length > 0) {
+    const spreadsheetId = response.data.files[0].id;
+    console.log(`📄 Found existing spreadsheet: ${spreadsheetId}`);
     return spreadsheetId;
   }
 
-  const authClient = await auth.getClient();
-  const drive = google.drive({ version: 'v3', auth: authClient });
-
-  const title = `StartUp-Log-${instanceName}`;
+  // אם לא נמצא, יוצר גיליון חדש
   const spreadsheet = await sheets.spreadsheets.create({
     resource: {
       properties: { title },
@@ -43,7 +46,7 @@ async function ensureSpreadsheetExists(instanceName) {
     auth: authClient,
   });
 
-  spreadsheetId = spreadsheet.data.spreadsheetId;
+  const spreadsheetId = spreadsheet.data.spreadsheetId;
 
   // שתף את הקובץ עם עצמך כדי שיופיע בדרייב
   await drive.permissions.create({
@@ -56,7 +59,6 @@ async function ensureSpreadsheetExists(instanceName) {
     fields: 'id',
   });
 
-  fs.writeFileSync(spreadsheetPath, JSON.stringify({ id: spreadsheetId }, null, 2));
   console.log(`🆔 Created new spreadsheet: ${spreadsheetId}`);
   return spreadsheetId;
 }
@@ -88,7 +90,7 @@ async function getOrCreateSheet(sheetName, spreadsheetId) {
 }
 
 async function logStartupEvent(hostname) {
-  const spreadsheetId = await ensureSpreadsheetExists(hostname);
+  const spreadsheetId = await findOrCreateSpreadsheet(hostname);
   const authClient = await auth.getClient();
 
   const now = new Date().toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' }).replace(',', '');

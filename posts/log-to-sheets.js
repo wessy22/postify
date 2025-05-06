@@ -29,9 +29,8 @@ async function ensureSpreadsheetExists() {
       console.log(`🖥️ Got instance name: ${instanceName}`);
     } catch (e) {
       console.log('⚠️ Error getting instance name:', e.message);
-      // אם לא ניתן לקבל את שם השרת מ-Google Cloud, נשתמש בשם קבוע
-      instanceName = 'local';
-      console.log(`ℹ️ Using fixed name: ${instanceName}`);
+      // במקום להשתמש בשם קבוע, נזרוק שגיאה
+      throw new Error('Must run on Google Cloud server to get instance name');
     }
   }
   

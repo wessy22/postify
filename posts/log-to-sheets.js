@@ -68,8 +68,69 @@ async function getOrCreateSheet(sheetName, spreadsheetId) {
   });
 
   const existingSheet = meta.data.sheets.find(s => s.properties.title === sheetName);
-  if (existingSheet) return;
+  if (existingSheet) {
+    // בדוק אם יש כבר עיצוב מותנה
+    const rules = await sheets.spreadsheets.get({
+      spreadsheetId,
+      ranges: [`${sheetName}!A:E`],
+      fields: 'sheets.properties.sheetId,sheets.conditionalFormats',
+      auth,
+    });
 
+    // אם אין עיצוב מותנה, נוסיף אותו
+    if (!rules.data.sheets[0].conditionalFormats || rules.data.sheets[0].conditionalFormats.length === 0) {
+      console.log('🎨 Adding conditional formatting rules...');
+      const sheetId = existingSheet.properties.sheetId;
+      console.log(`📊 Sheet ID: ${sheetId}`);
+      
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        auth,
+        requestBody: {
+          requests: [
+            {
+              addConditionalFormatRule: {
+                rule: {
+                  ranges: [{ sheetId, startRowIndex: 0, endRowIndex: 1000, startColumnIndex: 2, endColumnIndex: 3 }],
+                  booleanRule: {
+                    condition: {
+                      type: 'TEXT_EQ',
+                      values: [{ userEnteredValue: 'Success' }]
+                    },
+                    format: {
+                      backgroundColor: { red: 0.776, green: 0.937, blue: 0.808 },
+                      textFormat: { foregroundColor: { red: 0, green: 0.38, blue: 0 } }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              addConditionalFormatRule: {
+                rule: {
+                  ranges: [{ sheetId, startRowIndex: 0, endRowIndex: 1000, startColumnIndex: 2, endColumnIndex: 3 }],
+                  booleanRule: {
+                    condition: {
+                      type: 'TEXT_EQ',
+                      values: [{ userEnteredValue: 'Error' }]
+                    },
+                    format: {
+                      backgroundColor: { red: 1, green: 0, blue: 0 },
+                      textFormat: { foregroundColor: { red: 1, green: 1, blue: 1 } }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      });
+      console.log('✅ Conditional formatting rules added');
+    }
+    return;
+  }
+
+  // יצירת גיליון חדש
   await sheets.spreadsheets.batchUpdate({
     spreadsheetId,
     auth,
@@ -86,6 +147,14 @@ async function getOrCreateSheet(sheetName, spreadsheetId) {
     },
   });
 
+  const sheetId = (await sheets.spreadsheets.get({
+    spreadsheetId,
+    ranges: [sheetName],
+    fields: 'sheets.properties.sheetId',
+    auth,
+  })).data.sheets[0].properties.sheetId;
+
+  // הוספת כותרות
   await sheets.spreadsheets.values.update({
     spreadsheetId,
     range: `${sheetName}!A1:E1`,
@@ -95,6 +164,119 @@ async function getOrCreateSheet(sheetName, spreadsheetId) {
     },
     auth,
   });
+
+  // הוספת עיצוב מותנה
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    auth,
+    requestBody: {
+      requests: [
+        {
+          addConditionalFormatRule: {
+            rule: {
+              ranges: [{ sheetId, startRowIndex: 0, endRowIndex: 1000, startColumnIndex: 2, endColumnIndex: 3 }],
+              booleanRule: {
+                condition: {
+                  type: 'TEXT_EQ',
+                  values: [{ userEnteredValue: 'StartUp' }]
+                },
+                format: {
+                  backgroundColor: { red: 0.776, green: 0.937, blue: 0.808 },
+                  textFormat: { foregroundColor: { red: 0, green: 0.38, blue: 0 } }
+                }
+              }
+            }
+          }
+        },
+        {
+          addConditionalFormatRule: {
+            rule: {
+              ranges: [{ sheetId, startRowIndex: 0, endRowIndex: 1000, startColumnIndex: 2, endColumnIndex: 3 }],
+              booleanRule: {
+                condition: {
+                  type: 'TEXT_EQ',
+                  values: [{ userEnteredValue: 'ShutDown' }]
+                },
+                format: {
+                  backgroundColor: { red: 1, green: 0.78, blue: 0.808 },
+                  textFormat: { foregroundColor: { red: 0.61, green: 0, blue: 0.024 } }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  });
+
+  console.log('✅ Sheet created and initialized with conditional formatting');
+}
+
+async function ensureConditionalFormattingForAllSheets(spreadsheetId) {
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId,
+    auth,
+  });
+
+  for (const sheet of meta.data.sheets) {
+    const sheetId = sheet.properties.sheetId;
+    const sheetTitle = sheet.properties.title;
+
+    // בדוק אם יש כבר עיצוב מותנה
+    const rules = await sheets.spreadsheets.get({
+      spreadsheetId,
+      ranges: [`${sheetTitle}!A:E`],
+      fields: 'sheets.properties.sheetId,sheets.conditionalFormats',
+      auth,
+    });
+
+    if (!rules.data.sheets[0].conditionalFormats || rules.data.sheets[0].conditionalFormats.length === 0) {
+      console.log(`🎨 Adding conditional formatting rules to sheet: ${sheetTitle}`);
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        auth,
+        requestBody: {
+          requests: [
+            {
+              addConditionalFormatRule: {
+                rule: {
+                  ranges: [{ sheetId, startRowIndex: 0, endRowIndex: 1000, startColumnIndex: 2, endColumnIndex: 3 }],
+                  booleanRule: {
+                    condition: {
+                      type: 'TEXT_EQ',
+                      values: [{ userEnteredValue: 'StartUp' }]
+                    },
+                    format: {
+                      backgroundColor: { red: 0.776, green: 0.937, blue: 0.808 },
+                      textFormat: { foregroundColor: { red: 0, green: 0.38, blue: 0 } }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              addConditionalFormatRule: {
+                rule: {
+                  ranges: [{ sheetId, startRowIndex: 0, endRowIndex: 1000, startColumnIndex: 2, endColumnIndex: 3 }],
+                  booleanRule: {
+                    condition: {
+                      type: 'TEXT_EQ',
+                      values: [{ userEnteredValue: 'ShutDown' }]
+                    },
+                    format: {
+                      backgroundColor: { red: 1, green: 0.78, blue: 0.808 },
+                      textFormat: { foregroundColor: { red: 0.61, green: 0, blue: 0.024 } }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      });
+      console.log(`✅ Conditional formatting rules added to sheet: ${sheetTitle}`);
+    }
+  }
 }
 
 async function logToSheet(action, status, group = '', notes = '') {
@@ -117,6 +299,9 @@ async function logToSheet(action, status, group = '', notes = '') {
     },
     auth,
   });
+
+  // הוסף עיצוב מותנה לכל הגיליונות
+  await ensureConditionalFormattingForAllSheets(spreadsheetId);
 
   console.log(`✅ Log written to sheet: ${dateSheetName}`);
 }

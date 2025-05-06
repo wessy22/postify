@@ -44,8 +44,8 @@ async function createCostLogSheet() {
     fields: 'id',
   });
 
-  fs.writeFileSync(path.join(__dirname, 'spreadsheet.json'), JSON.stringify({ id: spreadsheetId }, null, 2));
-  console.log('📄 spreadsheet.json saved.');
+  fs.writeFileSync(path.join(__dirname, 'spreadsheet-cost.json'), JSON.stringify({ id: spreadsheetId }, null, 2));
+  console.log('📄 spreadsheet-cost.json saved.');
 }
 
 createCostLogSheet().catch(err => {

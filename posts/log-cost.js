@@ -1,13 +1,12 @@
-
 const { BigQuery } = require('@google-cloud/bigquery');
 const { google } = require('googleapis');
 const path = require('path');
 const fs = require("fs");
 
-const spreadsheetPath = path.join(__dirname, "spreadsheet.json");
+const spreadsheetPath = path.join(__dirname, "spreadsheet-cost.json");
 
 if (!fs.existsSync(spreadsheetPath)) {
-  console.log("📄 spreadsheet.json not found — running create-cost-sheet.js...");
+  console.log("📄 spreadsheet-cost.json not found — running create-cost-sheet.js...");
   require("child_process").execSync("node create-cost-sheet.js", { stdio: "inherit" });
 }
 
@@ -69,7 +68,7 @@ async function logCostsToSheet(rows) {
   const yearSuffix = String(now.getFullYear()).slice(-2);
   const monthSheet = `${hebrewMonths[now.getMonth()]} ${yearSuffix}`;
   const instanceName = fs.readFileSync(path.join(__dirname, 'instance-name.txt'), 'utf-8').trim();
-  const spreadsheetMeta = require('./spreadsheet.json');
+  const spreadsheetMeta = require('./spreadsheet-cost.json');
   const spreadsheetId = spreadsheetMeta.id;
 
 

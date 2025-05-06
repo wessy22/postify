@@ -89,6 +89,73 @@ async function getOrCreateSheet(sheetName, spreadsheetId) {
   });
 }
 
+async function ensureConditionalFormattingForAllSheets(spreadsheetId, authClient) {
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId,
+    auth: authClient,
+  });
+
+  for (const sheet of meta.data.sheets) {
+    const sheetId = sheet.properties.sheetId;
+    const sheetTitle = sheet.properties.title;
+
+    // בדוק אם יש כבר עיצוב מותנה
+    const rules = await sheets.spreadsheets.get({
+      spreadsheetId,
+      ranges: [`${sheetTitle}!A:E`],
+      fields: 'sheets.properties.sheetId,sheets.conditionalFormats',
+      auth: authClient,
+    });
+
+    if (!rules.data.sheets[0].conditionalFormats || rules.data.sheets[0].conditionalFormats.length === 0) {
+      console.log(`🎨 Adding conditional formatting rules to sheet: ${sheetTitle}`);
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        auth: authClient,
+        requestBody: {
+          requests: [
+            {
+              addConditionalFormatRule: {
+                rule: {
+                  ranges: [{ sheetId, startRowIndex: 0, endRowIndex: 1000, startColumnIndex: 2, endColumnIndex: 3 }],
+                  booleanRule: {
+                    condition: {
+                      type: 'TEXT_EQ',
+                      values: [{ userEnteredValue: 'StartUp' }]
+                    },
+                    format: {
+                      backgroundColor: { red: 0.776, green: 0.937, blue: 0.808 },
+                      textFormat: { foregroundColor: { red: 0, green: 0.38, blue: 0 } }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              addConditionalFormatRule: {
+                rule: {
+                  ranges: [{ sheetId, startRowIndex: 0, endRowIndex: 1000, startColumnIndex: 2, endColumnIndex: 3 }],
+                  booleanRule: {
+                    condition: {
+                      type: 'TEXT_EQ',
+                      values: [{ userEnteredValue: 'ShutDown' }]
+                    },
+                    format: {
+                      backgroundColor: { red: 1, green: 0.78, blue: 0.808 },
+                      textFormat: { foregroundColor: { red: 0.61, green: 0, blue: 0.024 } }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      });
+      console.log(`✅ Conditional formatting rules added to sheet: ${sheetTitle}`);
+    }
+  }
+}
+
 async function logStartupEvent(hostname) {
   const spreadsheetId = await findOrCreateSpreadsheet(hostname);
   const authClient = await auth.getClient();
@@ -112,6 +179,9 @@ async function logStartupEvent(hostname) {
     resource: { values },
     auth: authClient,
   });
+
+  // הוסף עיצוב מותנה לכל הגיליונות
+  await ensureConditionalFormattingForAllSheets(spreadsheetId, authClient);
 
   console.log(`✅ Startup logged in sheet "${monthSheet}"`);
 }

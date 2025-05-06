@@ -2,10 +2,8 @@ const { google } = require('googleapis');
 const fs = require('fs');
 const path = require('path');
 const keys = require('./credentials.json');
-<<<<<<< HEAD
-=======
 const getInstanceName = require('./get-instance-name');
->>>>>>> latest_branch
+const os = require('os');
 
 const sheets = google.sheets('v4');
 
@@ -17,21 +15,22 @@ const auth = new google.auth.JWT(
 );
 
 // Load or create spreadsheet per instance
-<<<<<<< HEAD
-const instanceName = fs.readFileSync(path.join(__dirname, 'instance-name.txt'), 'utf-8').trim();
-const spreadsheetPath = path.join(__dirname, `spreadsheet-logtosheet.json`);
-let spreadsheetId = '';
-
-async function ensureSpreadsheetExists() {
-=======
 let instanceName = '';
 let spreadsheetPath = '';
 let spreadsheetId = '';
 
 async function ensureSpreadsheetExists() {
-  if (!instanceName) throw new Error('No instance name available!');
+  if (!instanceName) {
+    try {
+      instanceName = await getInstanceName();
+    } catch (e) {
+      // אם לא ניתן לקבל את שם השרת מ-Google Cloud, נשתמש בשם המחשב המקומי
+      instanceName = os.hostname();
+      console.log(`ℹ️ Using local computer name: ${instanceName}`);
+    }
+  }
+  
   spreadsheetPath = path.join(__dirname, `spreadsheet-logtosheet.json`);
->>>>>>> latest_branch
   if (fs.existsSync(spreadsheetPath)) {
     spreadsheetId = require(spreadsheetPath).id;
     return;
@@ -101,16 +100,6 @@ async function getOrCreateSheet(sheetName, spreadsheetId) {
 }
 
 async function logToSheet(action, status, group = '', notes = '') {
-<<<<<<< HEAD
-=======
-  if (!instanceName) {
-    try {
-      instanceName = await getInstanceName();
-    } catch (e) {
-      throw new Error('לא ניתן לקבל את שם השרת מה-metadata של Google Cloud.');
-    }
-  }
->>>>>>> latest_branch
   await auth.authorize();
   await ensureSpreadsheetExists();
 

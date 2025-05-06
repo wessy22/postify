@@ -3,10 +3,7 @@ const { execSync } = require('child_process');
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-<<<<<<< HEAD
-=======
 const config = require("./config.json");
->>>>>>> latest_branch
 const logToSheet = async (...args) => {
   try {
     const fn = require('./log-to-sheets');
@@ -43,20 +40,12 @@ const postText = postData.text;
   let browser;
   let groupName = groupUrl;
   try {
-<<<<<<< HEAD
-    const userDataDir = `C:\\Users\\${os.userInfo().username}\\AppData\\Local\\Google\\Chrome\\User Data`;
-=======
     const userDataDir = config.userDataDir.replace("user", os.userInfo().username);
->>>>>>> latest_branch
 
     console.log("🚀 Launching browser with user profile...");
     browser = await puppeteer.launch({
       headless: false,
-<<<<<<< HEAD
-      executablePath: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-=======
       executablePath: config.chromePath,
->>>>>>> latest_branch
       userDataDir: userDataDir,
       args: [
         "--no-sandbox",
@@ -140,11 +129,7 @@ const postText = postData.text;
     groupName = await page.title();
     console.log("GROUP_NAME_START" + groupName + "GROUP_NAME_END");
     groupName = groupName.replace(" | postify", "").trim();
-<<<<<<< HEAD
-    fs.writeFileSync("current-group.txt", groupName, "utf-8");
-=======
     fs.writeFileSync(config.currentGroupFile, groupName, "utf-8");
->>>>>>> latest_branch
     console.log("✅ Group name saved:", groupName);
 
     await logToSheet('Post published', 'Success', groupName, 'Text + Images');

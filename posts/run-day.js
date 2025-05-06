@@ -1,24 +1,8 @@
-<<<<<<< HEAD
-=======
 // טוען את המודולים הנדרשים
->>>>>>> latest_branch
 const fs = require("fs");
 const path = require("path");
 const { spawn, exec } = require("child_process");
 const { sendMail, sendErrorMail } = require("./mailer");
-<<<<<<< HEAD
-const logToSheet = require("./log-to-sheets"); // ← טעינת לוג לגוגל שיט
-
-const POSTS_FOLDER = path.join(__dirname);
-const LOG_FILE = path.join(__dirname, "log.txt");
-const STATE_FILE = path.join(__dirname, "state.json");
-const CURRENT_GROUP_NAME_FILE = path.join(__dirname, "current-group.txt");
-const day = new Date().getDay();
-
-function shouldStopByHour() {
-  const hour = new Date().getHours();
-  return hour >= 23;
-=======
 const logToSheet = require("./log-to-sheets"); // טעינת לוג לגוגל שיט
 const config = require("./config.json");
 
@@ -37,7 +21,6 @@ const day = new Date().getDay();
 function shouldStopByHour() {
   const hour = new Date().getHours();
   return hour >= config.shutdownHour;
->>>>>>> latest_branch
 }
 
 const logStream = fs.createWriteStream(LOG_FILE, { flags: "a" });
@@ -109,13 +92,8 @@ async function runPostFromIndex(index) {
     try {
       await sendMail("📋 דוח יומי – פרסום בפייסבוק", summary);
       log("📧 דוח יומי נשלח.");
-<<<<<<< HEAD
-      fs.mkdirSync("C:/postify/reports", { recursive: true });
-      fs.writeFileSync(`C:/postify/reports/report-${new Date().toISOString().slice(0,10)}.txt`, summary);
-=======
       fs.mkdirSync(config.reportsDir, { recursive: true });
       fs.writeFileSync(`${config.reportsDir}/report-${new Date().toISOString().slice(0,10)}.txt`, summary);
->>>>>>> latest_branch
     } catch (e) {
       log("❌ שגיאה בשליחת הדוח: " + e.message);
       await sendErrorMail("❌ שגיאה בשליחת דוח יומי", e.message);
@@ -179,11 +157,7 @@ async function runPostFromIndex(index) {
     results.push({ name: groupName, status: statusText, time });
     logToSheet("Publishing finished", code === 0 ? "Success" : "Failed", groupName, time);
 
-<<<<<<< HEAD
-    const delaySec = 600 + Math.floor(Math.random() * 360);
-=======
     const delaySec = config.minDelaySec + Math.floor(Math.random() * (config.maxDelaySec - config.minDelaySec + 1));
->>>>>>> latest_branch
     const minutes = Math.floor(delaySec / 60);
     const seconds = delaySec % 60;
     log(`⏱ Waiting ${minutes} minutes and ${seconds} seconds before the next group...`);
@@ -193,14 +167,9 @@ async function runPostFromIndex(index) {
   });
 }
 
-<<<<<<< HEAD
-(async () => {
-  const initialDelay = Math.floor(Math.random() * 900);
-=======
 // פונקציה ראשית שמבצעת השהיה רנדומלית לפני תחילת הפרסום
 (async () => {
   const initialDelay = Math.floor(Math.random() * config.initialDelayMaxSec);
->>>>>>> latest_branch
   const delayMin = Math.floor(initialDelay / 60);
   const delaySec = initialDelay % 60;
 

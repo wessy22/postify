@@ -38,36 +38,54 @@ function getInstanceName() {
               resolve(name);
             } else {
               console.log('❌ No instance name found in response');
-              reject(new Error('No instance name found in metadata.'));
+              // אם לא מצאנו שם בשרת, נשתמש בשם המחשב המקומי
+              const localName = os.hostname();
+              console.log(`ℹ️ Using local computer name: ${localName}`);
+              resolve(localName);
             }
           });
         });
 
         req.on('error', (err) => {
           console.log('❌ Request error:', err.message);
-          reject(new Error('Failed to get instance name from metadata: ' + err.message));
+          // אם יש שגיאה בקבלת שם השרת, נשתמש בשם המחשב המקומי
+          const localName = os.hostname();
+          console.log(`ℹ️ Using local computer name: ${localName}`);
+          resolve(localName);
         });
 
         req.setTimeout(5000, () => {
           console.log('⏰ Request timed out');
           req.destroy();
-          reject(new Error('Timeout getting instance name from metadata.'));
+          // אם יש timeout בקבלת שם השרת, נשתמש בשם המחשב המקומי
+          const localName = os.hostname();
+          console.log(`ℹ️ Using local computer name: ${localName}`);
+          resolve(localName);
         });
       } else {
         console.log('❌ Not running on Google Cloud');
-        reject(new Error('Not running on Google Cloud'));
+        // אם אנחנו לא על Google Cloud, נשתמש בשם המחשב המקומי
+        const localName = os.hostname();
+        console.log(`ℹ️ Using local computer name: ${localName}`);
+        resolve(localName);
       }
     });
 
     checkReq.on('error', (err) => {
       console.log('❌ Not running on Google Cloud:', err.message);
-      reject(new Error('Not running on Google Cloud'));
+      // אם יש שגיאה בחיבור לשרת ה-metadata, נשתמש בשם המחשב המקומי
+      const localName = os.hostname();
+      console.log(`ℹ️ Using local computer name: ${localName}`);
+      resolve(localName);
     });
 
     checkReq.setTimeout(1000, () => {
       console.log('⏰ Check timed out - not running on Google Cloud');
       checkReq.destroy();
-      reject(new Error('Not running on Google Cloud'));
+      // אם יש timeout בחיבור לשרת ה-metadata, נשתמש בשם המחשב המקומי
+      const localName = os.hostname();
+      console.log(`ℹ️ Using local computer name: ${localName}`);
+      resolve(localName);
     });
   });
 }

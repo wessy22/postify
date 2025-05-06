@@ -23,7 +23,14 @@ const hebrewMonths = [
 ];
 
 async function ensureSpreadsheetExists(instanceName) {
-  if (fs.existsSync(spreadsheetPath)) return;
+  let spreadsheetId;
+  
+  if (fs.existsSync(spreadsheetPath)) {
+    const meta = require(spreadsheetPath);
+    spreadsheetId = meta.id;
+    console.log(`📄 Using existing spreadsheet: ${spreadsheetId}`);
+    return spreadsheetId;
+  }
 
   const authClient = await auth.getClient();
   const drive = google.drive({ version: 'v3', auth: authClient });
@@ -36,7 +43,7 @@ async function ensureSpreadsheetExists(instanceName) {
     auth: authClient,
   });
 
-  const spreadsheetId = spreadsheet.data.spreadsheetId;
+  spreadsheetId = spreadsheet.data.spreadsheetId;
 
   // שתף את הקובץ עם עצמך כדי שיופיע בדרייב
   await drive.permissions.create({
@@ -50,7 +57,8 @@ async function ensureSpreadsheetExists(instanceName) {
   });
 
   fs.writeFileSync(spreadsheetPath, JSON.stringify({ id: spreadsheetId }, null, 2));
-  console.log(`🆔 Spreadsheet created: ${spreadsheetId}`);
+  console.log(`🆔 Created new spreadsheet: ${spreadsheetId}`);
+  return spreadsheetId;
 }
 
 async function getOrCreateSheet(sheetName, spreadsheetId) {
@@ -80,11 +88,8 @@ async function getOrCreateSheet(sheetName, spreadsheetId) {
 }
 
 async function logStartupEvent(hostname) {
-  await ensureSpreadsheetExists(hostname);
-
+  const spreadsheetId = await ensureSpreadsheetExists(hostname);
   const authClient = await auth.getClient();
-  const spreadsheetMeta = require('./spreadsheet-startup.json');
-  const spreadsheetId = spreadsheetMeta.id;
 
   const now = new Date().toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' }).replace(',', '');
   const monthSheet = `${hebrewMonths[new Date().getMonth()]} ${String(new Date().getFullYear()).slice(-2)}`;

@@ -20,22 +20,19 @@ function getInstanceName() {
         if (name) {
           resolve(name);
         } else {
-          console.log('⚠️ No instance name found in metadata, using local computer name');
-          resolve(os.hostname());
+          reject(new Error('No instance name found in metadata.'));
         }
       });
     });
 
     req.on('error', (err) => {
-      console.log('⚠️ Failed to get instance name from metadata, using local computer name:', err.message);
-      resolve(os.hostname());
+      reject(new Error('Failed to get instance name from metadata: ' + err.message));
     });
 
     // Set a timeout of 2 seconds
     req.setTimeout(2000, () => {
-      console.log('⚠️ Timeout getting instance name from metadata, using local computer name');
       req.destroy();
-      resolve(os.hostname());
+      reject(new Error('Timeout getting instance name from metadata.'));
     });
   });
 }

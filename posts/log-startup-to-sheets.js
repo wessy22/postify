@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const ip = require('ip');
 const getInstanceName = require('./get-instance-name');
+const os = require('os');
 
 const sheets = google.sheets('v4');
 
@@ -109,12 +110,20 @@ async function logStartupEvent(hostname) {
 }
 
 // הריצה הראשית
-getInstanceName().then(serverName => {
-  if (!serverName) throw new Error('לא ניתן לקבל את שם השרת מה-metadata של Google Cloud.');
-  console.log(`🖥️ Server name: ${serverName}`);
-  logStartupEvent(serverName).catch(err => {
+(async () => {
+  let serverName;
+  try {
+    serverName = await getInstanceName();
+    console.log(`🖥️ Server name from Google Cloud: ${serverName}`);
+  } catch (e) {
+    // אם לא ניתן לקבל את שם השרת מ-Google Cloud, נשתמש בשם המחשב המקומי
+    serverName = os.hostname();
+    console.log(`ℹ️ Using local computer name: ${serverName}`);
+  }
+
+  try {
+    await logStartupEvent(serverName);
+  } catch (err) {
     console.error("❌ Error logging startup:", err.message);
-  });
-}).catch(err => {
-  console.error('❌ שגיאה בשליפת שם השרת:', err.message);
-});
+  }
+})();

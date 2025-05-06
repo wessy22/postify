@@ -3,7 +3,10 @@ const https = require('https');
 function getInstanceName() {
   return new Promise((resolve, reject) => {
     const options = {
-      hostname: 'metadata.google.internal',
+      // This is a static IP address used by Google Cloud metadata service
+      // It's a link-local address (169.254.0.0/16) that's guaranteed to be available
+      // on all Google Cloud instances. This address never changes.
+      hostname: '169.254.169.254',
       path: '/computeMetadata/v1/instance/name',
       headers: { 'Metadata-Flavor': 'Google' }
     };

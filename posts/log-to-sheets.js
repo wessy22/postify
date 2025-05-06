@@ -2,6 +2,7 @@ const { google } = require('googleapis');
 const fs = require('fs');
 const path = require('path');
 const keys = require('./credentials.json');
+const getInstanceName = require('./get-instance-name');
 
 const sheets = google.sheets('v4');
 
@@ -13,11 +14,21 @@ const auth = new google.auth.JWT(
 );
 
 // Load or create spreadsheet per instance
-const instanceName = fs.readFileSync(path.join(__dirname, 'instance-name.txt'), 'utf-8').trim();
+let instanceName = '';
 const spreadsheetPath = path.join(__dirname, `spreadsheet-logtosheet.json`);
 let spreadsheetId = '';
 
 async function ensureSpreadsheetExists() {
+  if (!instanceName) {
+    try {
+      instanceName = await getInstanceName();
+      console.log(`🖥️ Got instance name: ${instanceName}`);
+    } catch (e) {
+      console.log('⚠️ Error getting instance name:', e.message);
+      throw new Error('Must run on Google Cloud server to get instance name');
+    }
+  }
+
   if (fs.existsSync(spreadsheetPath)) {
     spreadsheetId = require(spreadsheetPath).id;
     return;

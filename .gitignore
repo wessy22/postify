@@ -1,0 +1,16 @@
+.tmp.driveupload/ 
+.tmp.driveupload/ 
+.tmp.driveupload/ 
+chrome-profile/
+.tmp.driveupload/
+*.tmp
+*.log
+*.bak
+*.zip
+*.rar
+*.7z
+credentials.json 
+posts/credentials.json
+log.txt
+group hunter/
+instance-name.txt

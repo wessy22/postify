@@ -1,0 +1,30 @@
+
+<!DOCTYPE html>
+<html lang="he">
+<head>
+  <meta charset="UTF-8">
+  <title>שכפול שרת מגוגל קלאוד</title>
+  <style>
+    body { font-family: Arial; direction: rtl; padding: 20px; }
+    label { display: block; margin-top: 10px; }
+    input, button { width: 100%; padding: 8px; margin-top: 5px; }
+    .btn-start { background-color: #007bff; color: white; border: none; margin-bottom: 20px; }
+  </style>
+</head>
+<body>
+<h2>🔁 יצירת שרת חדש מתוך Snapshot</h2>
+
+<!-- כפתור להפעלת server.js מקומית -->
+<button class="btn-start" onclick="window.open('start-server.bat')">🚀 הפעלת שכפול השרת</button>
+
+<form action="http://localhost:3000/clone" method="POST">
+  <label>שם שרת חדש:
+    <input name="serverName" required>
+  </label>
+  <label>מייל לשליחת פוסטים:
+    <input name="postEmail" type="email" required>
+  </label>
+  <button type="submit">✅ צור שרת חדש</button>
+</form>
+</body>
+</html>

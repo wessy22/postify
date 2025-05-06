@@ -1,0 +1,26 @@
+קובץ,תיאור,חשיבות
+.gitignore,מונע מקבצים מסוימים להיכלל ב־Git,🌟🌟
+credentials.json,קובץ התחברות לשירותים של Google,🌟🌟🌟🌟
+email-config.js,"הגדרות למיילים – כתובת שולח, סיסמה, SMTP",🌟🌟🌟
+mailer.js,פונקציות לשליחת מיילים,🌟🌟🌟🌟
+log-to-sheets.js,שולח לוגים ל־Google Sheets,🌟🌟🌟
+post1.json עד post6.json,"כל אחד מכיל טקסט, תמונות וקבוצות לפרסום",🌟🌟🌟🌟🌟
+test.json,קובץ ניסיוני לפוסט או קבוצות,🌟
+run-day.js,הסקריפט הראשי שמריץ פוסט יומי לפי היום,🌟🌟🌟🌟🌟
+run-post.js,מריץ פוסט מסוים ידנית,🌟🌟🌟🌟
+post.js,מפרסם פוסט אחד לקבוצה אחת,🌟🌟🌟🌟🌟
+start.bat,קיצור דרך להרצת המערכת,🌟🌟
+run-daily.bat,קיצור דרך להרצה יומית,🌟🌟🌟
+reset group file.bat,מאפס את הקובץ current-group.txt,🌟
+copy-image.ps1 / copy-image1.ps1,מעתיקים תמונה לזיכרון,🌟🌟🌟
+paste-image.js,מדביק את התמונה ללוח הפייסבוק,🌟🌟🌟
+current-group.txt,שומר את שם הקבוצה שמתפרסמת כרגע,🌟🌟🌟
+log.txt,לוג פשוט של הפעולות,🌟🌟
+state.json,שומר את מצב הריצה,🌟🌟🌟🌟
+test-log.js,בודק את שליחת לוגים,🌟
+test-mail.js,בודק שליחת מיילים,🌟
+test.js,קובץ בדיקה כללי,🌟
+download-posts.js,מוריד פוסטים מדף פייסבוק,🌟🌟🌟
+upload-posts.js,מעלה פוסטים שהורדו לדף חדש,🌟🌟🌟
+upload-dialog.html,ממשק דיאלוג להעלאה (אם יש),🌟
+upload to github.bat,מעלה שינויים ל־GitHub,🌟🌟

@@ -1,4 +1,5 @@
 const https = require('https');
+const os = require('os');
 
 function getInstanceName() {
   return new Promise((resolve, reject) => {
@@ -11,7 +12,7 @@ function getInstanceName() {
       headers: { 'Metadata-Flavor': 'Google' }
     };
 
-    https.get(options, (res) => {
+    const req = https.get(options, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
@@ -19,11 +20,22 @@ function getInstanceName() {
         if (name) {
           resolve(name);
         } else {
-          reject(new Error('No instance name found in metadata.'));
+          console.log('⚠️ No instance name found in metadata, using local computer name');
+          resolve(os.hostname());
         }
       });
-    }).on('error', (err) => {
-      reject(new Error('Failed to get instance name from metadata: ' + err.message));
+    });
+
+    req.on('error', (err) => {
+      console.log('⚠️ Failed to get instance name from metadata, using local computer name:', err.message);
+      resolve(os.hostname());
+    });
+
+    // Set a timeout of 2 seconds
+    req.setTimeout(2000, () => {
+      console.log('⚠️ Timeout getting instance name from metadata, using local computer name');
+      req.destroy();
+      resolve(os.hostname());
     });
   });
 }

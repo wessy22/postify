@@ -1,4 +1,4 @@
-const https = require('https');
+const http = require('http');
 const os = require('os');
 
 function getInstanceName() {
@@ -10,22 +10,20 @@ function getInstanceName() {
       hostname: '169.254.169.254',
       path: '/computeMetadata/v1/',
       headers: { 'Metadata-Flavor': 'Google' },
-      rejectUnauthorized: false,
       timeout: 1000 // Quick timeout for the check
     };
 
-    const checkReq = https.get(checkOptions, (res) => {
+    const checkReq = http.get(checkOptions, (res) => {
       if (res.statusCode === 200) {
         console.log('✅ Running on Google Cloud, getting instance name...');
         // We're on Google Cloud, get the instance name
         const options = {
           hostname: '169.254.169.254',
           path: '/computeMetadata/v1/instance/name',
-          headers: { 'Metadata-Flavor': 'Google' },
-          rejectUnauthorized: false
+          headers: { 'Metadata-Flavor': 'Google' }
         };
 
-        const req = https.get(options, (res) => {
+        const req = http.get(options, (res) => {
           console.log(`📥 Response status: ${res.statusCode}`);
           let data = '';
           res.on('data', chunk => {

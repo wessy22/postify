@@ -72,4 +72,17 @@ function getInstanceName() {
   });
 }
 
+// אם הקובץ מופעל ישירות (לא מיובא)
+if (require.main === module) {
+  getInstanceName()
+    .then(name => {
+      console.log('Instance name:', name);
+      process.exit(0);
+    })
+    .catch(err => {
+      console.error('Error:', err.message);
+      process.exit(1);
+    });
+}
+
 module.exports = getInstanceName; 

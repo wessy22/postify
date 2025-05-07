@@ -28,7 +28,7 @@ getProviderInfo((err, info) => {
     : `IP חיצוני: ${info.ip}\nספק: ${info.org}`;
 
   const message = `
-שרת הופעל בהצלחה ✅
+שרת סיים בהצלחה ✅
 
 🕒 תאריך ושעה: ${now}
 🖥️ שם שרת: ${hostname}
@@ -46,7 +46,7 @@ ${providerText}
   const mailOptions = {
     from: '"Postify Server" <support@postify.co.il>',
     to: config.to,
-    subject: "Postify – השרת הופעל",
+    subject: "Postify – השרת סיים בהצלחה",
     text: message,
   };
 

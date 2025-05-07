@@ -68,6 +68,7 @@ if (fs.existsSync(STATE_FILE)) {
     }
   } catch (e) {
     log("⚠️ לא ניתן לקרוא את קובץ ה־state. מתחיל מההתחלה.");
+    await sendErrorMail("⚠️ שגיאה בקריאת קובץ state", `לא ניתן לקרוא את קובץ ה־state: ${e.message}`);
   }
 }
 
@@ -112,13 +113,24 @@ async function runPostFromIndex(index) {
         }
     
         setTimeout(() => {
-          log("💤 כיבוי השרת עכשיו...");
-          exec("shutdown /s /f /t 0", (shutdownError) => {
-            if (shutdownError) {
-              log("❌ שגיאה בכיבוי: " + shutdownError.message);
+          log("📧 שולח מייל סגירה...");
+          exec("node C:\\postify\\posts\\send-shutdown-mail.js", (mailError) => {
+            if (mailError) {
+              log("❌ שגיאה בשליחת מייל סגירה: " + mailError.message);
+            } else {
+              log("✅ מייל סגירה נשלח בהצלחה.");
             }
+
+            setTimeout(() => {
+              log("💤 כיבוי השרת עכשיו...");
+              exec("shutdown /s /f /t 0", (shutdownError) => {
+                if (shutdownError) {
+                  log("❌ שגיאה בכיבוי: " + shutdownError.message);
+                }
+              });
+            }, 30 * 1000); // 30 שניות לאחר שליחת המייל
           });
-        }, 60 * 1000); // דקה לאחר ההרצה
+        }, 60 * 1000); // דקה לאחר ההרצה של log-cost
       });
     
     }, 4 * 60 * 1000); // תזמון ל־4 דקות, כדי להריץ את BAT בדקה ה־5    
@@ -141,6 +153,11 @@ async function runPostFromIndex(index) {
 
   const child = spawn("node", ["post.js", groupUrl, postFile], { stdio: "inherit" });
 
+  child.on("error", async (error) => {
+    log(`❌ שגיאה בהרצת post.js: ${error.message}`);
+    await sendErrorMail("❌ שגיאה בהרצת post.js", `שגיאה בפרסום לקבוצה ${groupUrl}: ${error.message}`);
+  });
+
   child.on("exit", async (code) => {
     const now = new Date();
     const time = now.toLocaleTimeString("he-IL", { hour: '2-digit', minute: '2-digit' });
@@ -151,11 +168,22 @@ async function runPostFromIndex(index) {
       groupName = fs.readFileSync(CURRENT_GROUP_NAME_FILE, "utf-8").trim();
     } catch (e) {
       groupName = groupUrl;
+      await sendErrorMail("⚠️ שגיאה בקריאת שם הקבוצה", `לא ניתן לקרוא את שם הקבוצה: ${e.message}`);
     }
 
     log(`${statusText} ${groupName} – ${time}`);
     results.push({ name: groupName, status: statusText, time });
-    logToSheet("Publishing finished", code === 0 ? "Success" : "Failed", groupName, time);
+    
+    try {
+      await logToSheet("Publishing finished", code === 0 ? "Success" : "Failed", groupName, time);
+    } catch (e) {
+      log("⚠️ שגיאה ברישום לגוגל שיט: " + e.message);
+      await sendErrorMail("⚠️ שגיאה ברישום לגוגל שיט", `לא ניתן לרשום את התוצאה לגוגל שיט: ${e.message}`);
+    }
+
+    if (code !== 0) {
+      await sendErrorMail("❌ שגיאה בפרסום לקבוצה", `הפרסום לקבוצה ${groupName} נכשל עם קוד ${code}`);
+    }
 
     const delaySec = config.minDelaySec + Math.floor(Math.random() * (config.maxDelaySec - config.minDelaySec + 1));
     const minutes = Math.floor(delaySec / 60);

@@ -205,21 +205,20 @@ const { sendErrorMail, sendMail } = require("./mailer");
         process.exit(1);
       }
 
-      const fileArgIndex = args.indexOf("--file");
 
-      let postFile;
-      if (fileArgIndex !== -1 && args[fileArgIndex + 1]) {
-      postFile = args[fileArgIndex + 1];
-      log(`📂 הופעל עם קובץ מותאם: ${postFile}`);
-      } else {
-      const postIndex = (day % postCount) + 1;
-      postFile = `post${postIndex}.json`;
-      log(`📅 היום יום ${["ראשון","שני","שלישי","רביעי","חמישי","שישי"][day]} — נבחר: ${postFile}`);
+// בדיקה אם יש שימוש ב־--file <filename>
+const fileArgIndex = args.indexOf("--file");
+let postFile;
+
+if (fileArgIndex !== -1 && args[fileArgIndex + 1]) {
+  postFile = args[fileArgIndex + 1];
+  log(`📂 הופעל עם קובץ מותאם: ${postFile}`);
+} else {
+  const postIndex = (day % postFiles.length) + 1;
+  postFile = `post${postIndex}.json`;
+  log(`📅 היום יום ${["ראשון","שני","שלישי","רביעי","חמישי","שישי"][day]} — נבחר: ${postFile}`);
 }
 
-
-const postPath = path.join(POSTS_FOLDER, postFile);
-await logToSheet("Day started", "Info", "", `פוסט נבחר: ${postFile}`);
 
       const postData = JSON.parse(fs.readFileSync(postPath, "utf-8"));
       const groups = postData.groups;
@@ -242,14 +241,14 @@ await logToSheet("Day started", "Info", "", `פוסט נבחר: ${postFile}`);
 
       const initialDelay = skipDelay ? 0 : Math.floor(Math.random() * config.initialDelayMaxSec);
 
-      if (!skipDelay) {
-        const delayMin = Math.floor(initialDelay / 60);
-        const delaySec = initialDelay % 60;
-        log(`⏳ Starting random delay of ${delayMin} minutes and ${delaySec} seconds...`);
-        await countdown(initialDelay);
-      } else {
-        log("⏩ מופעל עם --now – מדלג על ההשהיה הראשונית");
-      }
+if (!skipDelay) {
+  const delayMin = Math.floor(initialDelay / 60);
+  const delaySec = initialDelay % 60;
+  log(`⏳ Starting random delay of ${delayMin} minutes and ${delaySec} seconds...`);
+  await countdown(initialDelay);
+} else {
+  log("⏩ מופעל עם --now – מדלג על ההשהיה הראשונית");
+}
 
       await runPostFromIndex(startIndex, groups, postFile, results);
     }

@@ -7,4 +7,6 @@ echo 📦 מריץ: node get-instance-name.js
 node get-instance-name.js
 
 echo ✅ סיום! הקובץ instance-name.txt נוצר או עודכן בהצלחה.
-pause
+
+echo 🕒 Waiting 10 seconds before closing...
+timeout /t 10 

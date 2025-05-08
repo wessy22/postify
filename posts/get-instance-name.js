@@ -1,22 +1,22 @@
 const http = require('http');
 const os = require('os');
+const fs = require('fs');
+const path = require('path');
 
 function getInstanceName() {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     console.log('🔍 Checking if running on Google Cloud...');
-    
-    // First check if we can reach the metadata server
+
     const checkOptions = {
       hostname: '169.254.169.254',
       path: '/computeMetadata/v1/',
       headers: { 'Metadata-Flavor': 'Google' },
-      timeout: 1000 // Quick timeout for the check
+      timeout: 1000
     };
 
     const checkReq = http.get(checkOptions, (res) => {
       if (res.statusCode === 200) {
         console.log('✅ Running on Google Cloud, getting instance name...');
-        // We're on Google Cloud, get the instance name
         const options = {
           hostname: '169.254.169.254',
           path: '/computeMetadata/v1/instance/name',
@@ -24,7 +24,6 @@ function getInstanceName() {
         };
 
         const req = http.get(options, (res) => {
-          console.log(`📥 Response status: ${res.statusCode}`);
           let data = '';
           res.on('data', chunk => {
             data += chunk;
@@ -32,93 +31,68 @@ function getInstanceName() {
           });
           res.on('end', () => {
             const name = data.trim();
-            console.log(`📝 Received data: "${name}"`);
             if (name) {
+              console.log(`📝 Received data: "${name}"`);
               console.log('✅ Successfully got instance name');
               resolve(name);
             } else {
-              console.log('❌ No instance name found in response');
-              // אם לא מצאנו שם בשרת, נשתמש בשם המחשב המקומי
-              const localName = os.hostname();
-              console.log(`ℹ️ Using local computer name: ${localName}`);
-              resolve(localName);
+              const fallback = os.hostname();
+              console.log('❌ No instance name found, using local:', fallback);
+              resolve(fallback);
             }
           });
         });
 
-        req.on('error', (err) => {
-          console.log('❌ Request error:', err.message);
-          // אם יש שגיאה בקבלת שם השרת, נשתמש בשם המחשב המקומי
-          const localName = os.hostname();
-          console.log(`ℹ️ Using local computer name: ${localName}`);
-          resolve(localName);
+        req.on('error', () => {
+          const fallback = os.hostname();
+          console.log('❌ Request error, using local:', fallback);
+          resolve(fallback);
         });
 
         req.setTimeout(5000, () => {
-          console.log('⏰ Request timed out');
           req.destroy();
-          // אם יש timeout בקבלת שם השרת, נשתמש בשם המחשב המקומי
-          const localName = os.hostname();
-          console.log(`ℹ️ Using local computer name: ${localName}`);
-          resolve(localName);
+          const fallback = os.hostname();
+          console.log('⏰ Request timed out, using local:', fallback);
+          resolve(fallback);
         });
       } else {
-        console.log('❌ Not running on Google Cloud');
-        // אם אנחנו לא על Google Cloud, נשתמש בשם המחשב המקומי
-        const localName = os.hostname();
-        console.log(`ℹ️ Using local computer name: ${localName}`);
-        resolve(localName);
+        const fallback = os.hostname();
+        console.log('❌ Not on Google Cloud, using local:', fallback);
+        resolve(fallback);
       }
     });
 
-    checkReq.on('error', (err) => {
-      console.log('❌ Not running on Google Cloud:', err.message);
-      // אם יש שגיאה בחיבור לשרת ה-metadata, נשתמש בשם המחשב המקומי
-      const localName = os.hostname();
-      console.log(`ℹ️ Using local computer name: ${localName}`);
-      resolve(localName);
+    checkReq.on('error', () => {
+      const fallback = os.hostname();
+      console.log('❌ Not on Google Cloud (connection error), using local:', fallback);
+      resolve(fallback);
     });
 
     checkReq.setTimeout(1000, () => {
-      console.log('⏰ Check timed out - not running on Google Cloud');
       checkReq.destroy();
-      // אם יש timeout בחיבור לשרת ה-metadata, נשתמש בשם המחשב המקומי
-      const localName = os.hostname();
-      console.log(`ℹ️ Using local computer name: ${localName}`);
-      resolve(localName);
+      const fallback = os.hostname();
+      console.log('⏰ Check timed out, using local:', fallback);
+      resolve(fallback);
     });
   });
 }
 
-// אם הקובץ מופעל ישירות (לא מיובא)
-if (require.main === module) {
-  getInstanceName()
-    .then(name => {
-      console.log('Instance name:', name);
-      process.exit(0);
-    })
-    .catch(err => {
-      console.error('Error:', err.message);
-      process.exit(1);
-    });
-}
-
-const fs = require('fs');
-const path = require('path');
-
+// אם הקובץ מופעל ישירות
 if (require.main === module) {
   getInstanceName()
     .then(name => {
       console.log('Instance name:', name);
       const filePath = path.join(__dirname, 'instance-name.txt');
-
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-        console.log('🗑️ Deleted old instance-name.txt');
+      try {
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+          console.log('🗑️ Deleted old instance-name.txt');
+        }
+        fs.writeFileSync(filePath, name.trim(), 'utf-8');
+        console.log(`📝 Created instance-name.txt with value: ${name}`);
+      } catch (e) {
+        console.error('❌ Failed to write instance-name.txt:', e.message);
       }
-
-      fs.writeFileSync(filePath, name.trim(), 'utf-8');
-      console.log(`📝 Created instance-name.txt with value: ${name}`);
       process.exit(0);
     })
     .catch(err => {
@@ -127,4 +101,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = getInstanceName; 
+module.exports = getInstanceName;

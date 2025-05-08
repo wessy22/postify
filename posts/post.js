@@ -1,4 +1,8 @@
-const puppeteer = require('puppeteer-core');
+const { sendErrorMail } = require("./mailer");
+
+(async () => {
+  try {
+    const puppeteer = require('puppeteer-core');
 const { execSync } = require('child_process');
 const fs = require("fs");
 const path = require("path");
@@ -73,7 +77,7 @@ const postText = postData.text;
     }
 
     console.log("📝 Typing post text...");
-    await page.waitForSelector('div[role="dialog"] div[role="textbox"]', { timeout: 20000 });
+    await page.waitForSelector('div[role="dialog"] div[role="textbox"]', { timeout: 40000 });
     const textbox = await page.$('div[role="dialog"] div[role="textbox"]');
     await textbox.click();
     await humanType(textbox, postText);
@@ -139,5 +143,23 @@ const postText = postData.text;
     console.error("❌ Error:", err.message);
     await logToSheet('Post failed', 'Error', groupName, err.message);
     if (browser) await browser.close();
+  }
+})();
+
+
+  } catch (err) {
+    console.error("❌ שגיאה באוטומציה:", err);
+
+    const message = [
+      `🛑 התרחשה שגיאה בסקריפט: ${__filename}`,
+      "",
+      `❗ שגיאה: ${err.message}`,
+      "",
+      err.stack,
+    ].join("\n");
+
+    await sendErrorMail("❌ שגיאה באוטומציה", message);
+
+    process.exit(1); // עצור את הריצה
   }
 })();

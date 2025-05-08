@@ -153,9 +153,6 @@ const { sendErrorMail, sendMail } = require("./mailer");
             await sendErrorMail("❌ שגיאה בפרסום לקבוצה", msg);
           
         }
-
-
-
         
         const delaySec = config.minDelaySec + Math.floor(Math.random() * (config.maxDelaySec - config.minDelaySec + 1));
         const minutes = Math.floor(delaySec / 60);
@@ -208,12 +205,21 @@ const { sendErrorMail, sendMail } = require("./mailer");
         process.exit(1);
       }
 
-      const postIndex = (day % postCount) + 1;
-      const postFile = `post${postIndex}.json`;
-      const postPath = path.join(POSTS_FOLDER, postFile);
+      const fileArgIndex = args.indexOf("--file");
 
+      let postFile;
+      if (fileArgIndex !== -1 && args[fileArgIndex + 1]) {
+      postFile = args[fileArgIndex + 1];
+      log(`📂 הופעל עם קובץ מותאם: ${postFile}`);
+      } else {
+      const postIndex = (day % postCount) + 1;
+      postFile = `post${postIndex}.json`;
       log(`📅 היום יום ${["ראשון","שני","שלישי","רביעי","חמישי","שישי"][day]} — נבחר: ${postFile}`);
-      await logToSheet("Day started", "Info", "", `פוסט נבחר: ${postFile}`);
+}
+
+
+const postPath = path.join(POSTS_FOLDER, postFile);
+await logToSheet("Day started", "Info", "", `פוסט נבחר: ${postFile}`);
 
       const postData = JSON.parse(fs.readFileSync(postPath, "utf-8"));
       const groups = postData.groups;

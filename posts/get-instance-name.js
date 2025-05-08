@@ -103,4 +103,28 @@ if (require.main === module) {
     });
 }
 
+const fs = require('fs');
+const path = require('path');
+
+if (require.main === module) {
+  getInstanceName()
+    .then(name => {
+      console.log('Instance name:', name);
+      const filePath = path.join(__dirname, 'instance-name.txt');
+
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        console.log('🗑️ Deleted old instance-name.txt');
+      }
+
+      fs.writeFileSync(filePath, name.trim(), 'utf-8');
+      console.log(`📝 Created instance-name.txt with value: ${name}`);
+      process.exit(0);
+    })
+    .catch(err => {
+      console.error('Error:', err.message);
+      process.exit(1);
+    });
+}
+
 module.exports = getInstanceName; 

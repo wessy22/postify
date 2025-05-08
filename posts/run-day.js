@@ -132,10 +132,31 @@ const { sendErrorMail, sendMail } = require("./mailer");
           await sendErrorMail("⚠️ שגיאה ברישום לגוגל שיט", `לא ניתן לרשום את התוצאה לגוגל שיט: ${e.message}`);
         }
 
-        if (code !== 0) {
-          await sendErrorMail("❌ שגיאה בפרסום לקבוצה", `הפרסום לקבוצה ${groupName} נכשל עם קוד ${code}`);
+        function explainExitCode(code) {
+          if (code === 0) return "בוצע בהצלחה.";
+        
+          const hex = "0x" + code.toString(16).toUpperCase();
+        
+          const map = {
+            1: "בעיה כללית – ייתכן שהסקריפט סיים עם שגיאה.",
+            3221225477: "שגיאת גישה לזיכרון (Access Violation) – ייתכן שקרס תהליך פנימי.",
+            3221225781: "חסרה ספריה או מודול. ודא שכל הקבצים קיימים.",
+            3221226505: "שגיאה קשה (Buffer Overrun / Stack Error) – כנראה קריסת Node או שגיאת סינטקס.",
+          };
+        
+          const reason = map[code] || `שגיאה כללית או לא מזוהה (קוד: ${code}, hex: ${hex})`;
+          return reason + ` (קוד: ${code}, hex: ${hex})`;
+        }
+          if (code !== 0) {
+            const reason = explainExitCode(code);
+            const msg = `❌ הפרסום לקבוצה ${groupName} נכשל.\n\n📄 סיבה אפשרית: ${reason}`;
+            await sendErrorMail("❌ שגיאה בפרסום לקבוצה", msg);
+          
         }
 
+
+
+        
         const delaySec = config.minDelaySec + Math.floor(Math.random() * (config.maxDelaySec - config.minDelaySec + 1));
         const minutes = Math.floor(delaySec / 60);
         const seconds = delaySec % 60;

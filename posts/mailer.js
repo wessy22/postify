@@ -9,7 +9,7 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-const sendMail = (subject, text) => {
+const sendMail = (subject, text, html) => {
   return transporter.sendMail({
     from: `"Postify" <${config.user}>`,
     to: config.to,

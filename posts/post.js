@@ -118,7 +118,7 @@ const postText = postData.text;
     const publishButtons = await page.$$('div[role="dialog"] [role="button"]');
     for (let btn of publishButtons) {
       const text = await page.evaluate(el => el.innerText.trim(), btn);
-      if (text === "פרסמי" || text === "Publish") {
+      if (text === "פרסמי" || text === "פרסם" || text === "Publish") {
         await btn.click();
         break;
       }

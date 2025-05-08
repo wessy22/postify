@@ -37,6 +37,29 @@ async function main() {
     process.exit(0);
   }
 
+  // שליחת מייל ללקוח על תחילת הפרסום
+  try {
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('he-IL', { timeZone: 'Asia/Jerusalem' });
+    const timeStr = now.toLocaleTimeString('he-IL', { timeZone: 'Asia/Jerusalem' });
+    await sendMail(
+      "הפרסום היומי שלך התחיל ✨",
+      `בוקר טוב 😊\n\nהפרסום שלך בקבוצות פייסבוק התחיל\n\nתאריך פרסום: ${dateStr}\n\nשעת התחלה: ${timeStr}\n\nשיהיה לכם יום נפלא!\n\nPostify`,
+      `<div dir="rtl" style="text-align:right;font-family:Arial,sans-serif;">
+        בוקר טוב 😊<br><br>
+        הפרסום שלך בקבוצות פייסבוק התחיל<br><br>
+        <b>תאריך פרסום:</b> ${dateStr}<br>
+        <b>שעת התחלה:</b> ${timeStr}<br><br>
+        שיהיה לכם יום נפלא!<br>
+        <b>Postify</b>
+      </div>`
+    );
+    log("📧 נשלח מייל ללקוח על תחילת הפרסום.");
+  } catch (e) {
+    log("❌ שגיאה בשליחת מייל תחילת פרסום: " + e.message);
+    await sendErrorMail("❌ שגיאה בשליחת מייל תחילת פרסום", e.message);
+  }
+
   const allFiles = fs.readdirSync(POSTS_FOLDER);
   const postFiles = allFiles.filter(f => /^post\d+\.json$/.test(f));
   const postCount = postFiles.length;
@@ -65,7 +88,7 @@ async function main() {
       const state = JSON.parse(fs.readFileSync(STATE_FILE, "utf-8"));
       if (state.file === postFile && state.index < groups.length) {
         startIndex = state.index;
-        log(`🔁 ממשיך מהריצה הקודמת: קבוצה ${startIndex + 1}/${groups.length}`);
+        log(`🔁Continuing from the last group ${startIndex + 1}/${groups.length}`);
       }
     } catch (e) {
       log("⚠️ לא ניתן לקרוא את קובץ ה־state. מתחיל מההתחלה.");

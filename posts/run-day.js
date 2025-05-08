@@ -220,8 +220,11 @@ if (fileArgIndex !== -1 && args[fileArgIndex + 1]) {
 }
 
 
-      const postData = JSON.parse(fs.readFileSync(postPath, "utf-8"));
-      const groups = postData.groups;
+const postPath = path.join(POSTS_FOLDER, postFile); // ← קודם נגדיר את הנתיב
+await logToSheet("Day started", "Info", "", `פוסט נבחר: ${postFile}`);
+
+const postData = JSON.parse(fs.readFileSync(postPath, "utf-8")); // ← ורק אז נקרא אותו
+const groups = postData.groups;
 
       const results = [];
 

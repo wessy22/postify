@@ -178,7 +178,7 @@ async function getOrCreateSheet(sheetName, spreadsheetId) {
               booleanRule: {
                 condition: {
                   type: 'TEXT_EQ',
-                  values: [{ userEnteredValue: 'StartUp' }]
+                  values: [{ userEnteredValue: 'Success' }]
                 },
                 format: {
                   backgroundColor: { red: 0.776, green: 0.937, blue: 0.808 },
@@ -195,7 +195,7 @@ async function getOrCreateSheet(sheetName, spreadsheetId) {
               booleanRule: {
                 condition: {
                   type: 'TEXT_EQ',
-                  values: [{ userEnteredValue: 'ShutDown' }]
+                  values: [{ userEnteredValue: 'Error' }]
                 },
                 format: {
                   backgroundColor: { red: 1, green: 0.78, blue: 0.808 },
@@ -244,7 +244,7 @@ async function ensureConditionalFormattingForAllSheets(spreadsheetId) {
                   booleanRule: {
                     condition: {
                       type: 'TEXT_EQ',
-                      values: [{ userEnteredValue: 'StartUp' }]
+                      values: [{ userEnteredValue: 'Success' }]
                     },
                     format: {
                       backgroundColor: { red: 0.776, green: 0.937, blue: 0.808 },
@@ -261,7 +261,7 @@ async function ensureConditionalFormattingForAllSheets(spreadsheetId) {
                   booleanRule: {
                     condition: {
                       type: 'TEXT_EQ',
-                      values: [{ userEnteredValue: 'ShutDown' }]
+                      values: [{ userEnteredValue: 'Error' }]
                     },
                     format: {
                       backgroundColor: { red: 1, green: 0.78, blue: 0.808 },
@@ -283,6 +283,9 @@ async function logToSheet(action, status, group = '', notes = '') {
   await auth.authorize();
   await ensureSpreadsheetExists();
 
+  // ודא עיצוב מותנה לכל הגיליונות, גם אם לא נכתבה שורה חדשה
+  await ensureConditionalFormattingForAllSheets(spreadsheetId);
+
   const now = new Date();
   const timestamp = now.toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' });
   const dateSheetName = now.toLocaleDateString('he-IL', { timeZone: 'Asia/Jerusalem' }).replace(/\//g, '-');
@@ -299,9 +302,6 @@ async function logToSheet(action, status, group = '', notes = '') {
     },
     auth,
   });
-
-  // הוסף עיצוב מותנה לכל הגיליונות
-  await ensureConditionalFormattingForAllSheets(spreadsheetId);
 
   console.log(`✅ Log written to sheet: ${dateSheetName}`);
 }

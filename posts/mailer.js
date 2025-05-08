@@ -15,6 +15,7 @@ const sendMail = (subject, text) => {
     to: config.to,
     subject,
     text,
+    html,
   });
 };
 

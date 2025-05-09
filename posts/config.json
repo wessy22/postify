@@ -8,7 +8,7 @@
   "minDelaySec": 600,
   "maxDelaySec": 960,
   "initialDelayMaxSec": 900,
-  "shutdownHour": 1,
+  "shutdownHour": 23,
   "spreadsheetId": "1o8AOOy6LBr6yBwb1tDhXLriOFkqle0hV2VH4V1Ykor0",
   "email": {
     "user": "support@postify.co.il",

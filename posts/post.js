@@ -18,16 +18,33 @@ const logToSheet = async (...args) => {
 };
 
 const humanType = async (element, text) => {
-  for (const char of text) {
-    await element.type(char);
-    const delay = 30 + Math.floor(Math.random() * 120);
-    await new Promise(r => setTimeout(r, delay));
-    if (Math.random() < 0.05) {
-      const pause = 400 + Math.random() * 600;
-      await new Promise(r => setTimeout(r, pause));
+  let charsTyped = 0;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+
+    // פעם ב-150 תווים בממוצע: סימולציית טעות
+    if (charsTyped > 0 && charsTyped % 150 === 0 && /[a-zא-ת]/i.test(char)) {
+      const wrongChar = String.fromCharCode(char.charCodeAt(0) + 1);
+      await element.type(wrongChar);
+      await new Promise(r => setTimeout(r, 50 + Math.random() * 80));
+      await element.press('Backspace');
     }
+
+    await element.type(char);
+    charsTyped++;
+
+    // קביעת השהיה בסיסית
+    let delay = 30 + Math.floor(Math.random() * 40); // מהיר יחסית
+
+    // תוספת קלה לפי סוג תו
+    if (char === ' ') delay += 20;
+    if (char === '.' || char === ',' || char === '\n') delay += 40;
+
+    await new Promise(r => setTimeout(r, delay));
   }
 };
+
 
 const groupUrl = process.argv[2];
 const jsonPath = process.argv[3];

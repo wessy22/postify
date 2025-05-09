@@ -46,7 +46,7 @@ ${providerText}
   const mailOptions = {
     from: '"Postify Server" <support@postify.co.il>',
     to: config.to,
-    subject: "Postify – השרת סיים בהצלחה",
+    subject: `השרת ${hostname} נסגר בהצלחה`,
     text: message,
   };
 

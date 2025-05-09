@@ -143,6 +143,7 @@ const postText = postData.text;
     console.error("❌ Error:", err.message);
     await logToSheet('Post failed', 'Error', groupName, err.message);
     if (browser) await browser.close();
+    process.exit(1);
   }
 })();
 

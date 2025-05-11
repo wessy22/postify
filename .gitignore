@@ -1,9 +1,3 @@
-.tmp.driveupload/ 
-.tmp.driveupload/ 
-.tmp.driveupload/ 
-.tmp.driveupload/ 
-.tmp.driveupload/ 
-.tmp.driveupload/ 
 chrome-profile/
 .tmp.driveupload/
 *.tmp
@@ -22,6 +16,8 @@ spreadsheet.json
 spreadsheet-cost.json
 spreadsheet-logtosheet.json
 spreadsheet-startup.json
+chrome-profiles/
+
 
 
 

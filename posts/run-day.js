@@ -15,8 +15,10 @@ const { sendErrorMail, sendMail } = require("./mailer");
     const day = new Date().getDay();
 
     function shouldStopByHour() {
-      const hour = new Date().getHours();
-      return hour >= config.shutdownHour;
+      const israelTime = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Jerusalem' });
+      const hour = new Date(israelTime).getHours();
+      console.log("🕒 שעה לפי ישראל:", hour);
+      return hour >= 23;
     }
 
     const logStream = fs.createWriteStream(LOG_FILE, { flags: "a" });

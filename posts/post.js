@@ -18,16 +18,34 @@ const logToSheet = async (...args) => {
 };
 
 const humanType = async (element, text) => {
+  let charsTyped = 0;
+  const typoFrequency = 150 + Math.floor(Math.random() * 100); // כל 150–250 תווים
+
   for (const char of text) {
+    // סימולציה של שגיאה עם תיקון
+    if (charsTyped > 0 && charsTyped % typoFrequency === 0 && /[a-zא-ת]/i.test(char)) {
+      const wrongChar = String.fromCharCode(char.charCodeAt(0) + 1);
+      await element.type(wrongChar);
+      await new Promise(r => setTimeout(r, 100 + Math.random() * 100));
+      await element.press('Backspace');
+      await new Promise(r => setTimeout(r, 100));
+    }
+
     await element.type(char);
+    charsTyped++;
+
+    // השהיה רגילה בין תווים
     const delay = 30 + Math.floor(Math.random() * 120);
     await new Promise(r => setTimeout(r, delay));
+
+    // השהיה אקראית כאילו המשתמש עוצר רגע
     if (Math.random() < 0.05) {
       const pause = 400 + Math.random() * 600;
       await new Promise(r => setTimeout(r, pause));
     }
   }
 };
+
 
 const groupUrl = process.argv[2];
 const jsonPath = process.argv[3];

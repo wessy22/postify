@@ -1,0 +1,45 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "post-1",
+      "type": "shell",
+      "command": "node run-post.js",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "post-2",
+      "type": "shell",
+      "command": "node run-post.js post2.json",
+      "group": {
+        "kind": "build",
+        "isDefault": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "post-3",
+      "type": "shell",
+      "command": "node run-post3.js",
+      "group": {
+        "kind": "build",
+        "isDefault": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Start XFCE Safely",
+      "type": "shell",
+      "command": "/root/fb-poster/startxfce-safe.sh",
+      "problemMatcher": [],
+      "group": {
+        "kind": "test",
+        "isDefault": false
+      }
+    }
+  ]
+}

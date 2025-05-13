@@ -23,8 +23,7 @@ const hebrewMonths = [
 async function findOrCreateSpreadsheet(instanceName) {
   const authClient = await auth.getClient();
   const drive = google.drive({ version: 'v3', auth: authClient });
-  
-  // חיפוש הגיליון לפי שם
+
   const title = `StartUp-Log-${instanceName}`;
   const response = await drive.files.list({
     q: `name='${title}' and mimeType='application/vnd.google-apps.spreadsheet'`,
@@ -38,7 +37,6 @@ async function findOrCreateSpreadsheet(instanceName) {
     return spreadsheetId;
   }
 
-  // אם לא נמצא, יוצר גיליון חדש
   const spreadsheet = await sheets.spreadsheets.create({
     resource: {
       properties: { title },
@@ -48,7 +46,6 @@ async function findOrCreateSpreadsheet(instanceName) {
 
   const spreadsheetId = spreadsheet.data.spreadsheetId;
 
-  // שתף את הקובץ עם עצמך כדי שיופיע בדרייב
   await drive.permissions.create({
     fileId: spreadsheetId,
     resource: {
@@ -99,7 +96,6 @@ async function ensureConditionalFormattingForAllSheets(spreadsheetId, authClient
     const sheetId = sheet.properties.sheetId;
     const sheetTitle = sheet.properties.title;
 
-    // בדוק אם יש כבר עיצוב מותנה
     const rules = await sheets.spreadsheets.get({
       spreadsheetId,
       ranges: [`${sheetTitle}!A:E`],
@@ -180,7 +176,6 @@ async function logStartupEvent(hostname) {
     auth: authClient,
   });
 
-  // הוסף עיצוב מותנה לכל הגיליונות
   await ensureConditionalFormattingForAllSheets(spreadsheetId, authClient);
 
   console.log(`✅ Startup logged in sheet "${monthSheet}"`);
@@ -193,10 +188,12 @@ async function logStartupEvent(hostname) {
     serverName = await getInstanceName();
     console.log(`🖥️ Server name from Google Cloud: ${serverName}`);
   } catch (e) {
-    // אם לא ניתן לקבל את שם השרת מ-Google Cloud, נשתמש בשם המחשב המקומי
     serverName = os.hostname();
     console.log(`ℹ️ Using local computer name: ${serverName}`);
   }
+
+  // שמירה ל-instance-name.txt
+  fs.writeFileSync(path.join(__dirname, 'instance-name.txt'), serverName);
 
   try {
     await logStartupEvent(serverName);

@@ -1,10 +1,13 @@
 const nodemailer = require("nodemailer");
-const os = require("os");
+const fs = require("fs");
+const path = require("path");
 const https = require("https");
 const config = require("./email-config");
 
 const now = new Date().toLocaleString("he-IL", { timeZone: "Asia/Jerusalem" });
-const hostname = os.hostname();
+
+// קריאת שם השרת מקובץ instance-name.txt
+const hostname = fs.readFileSync(path.join(__dirname, "instance-name.txt"), "utf-8").trim();
 
 function getProviderInfo(callback) {
   https.get("https://ipinfo.io/json", (res) => {

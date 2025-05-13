@@ -1,21 +1,34 @@
 const nodemailer = require("nodemailer");
-const os = require("os");
+const fs = require("fs");
+const path = require("path");
 const https = require("https");
 const config = require("./email-config");
 
+// תאריך ושעה נוכחיים
 const now = new Date().toLocaleString("he-IL", { timeZone: "Asia/Jerusalem" });
-const hostname = os.hostname();
+
+// שליפת שם השרת מתוך הקובץ
+let hostname = "unknown-server";
+try {
+  hostname = fs.readFileSync(path.join(__dirname, "instance-name.txt"), "utf-8").trim();
+} catch (e) {
+  console.error("⚠️ לא נמצא קובץ instance-name.txt, משתמש בשם ברירת מחדל");
+}
 
 function getProviderInfo(callback) {
   https.get("https://ipinfo.io/json", (res) => {
     let data = "";
     res.on("data", chunk => data += chunk);
     res.on("end", () => {
-      const info = JSON.parse(data);
-      callback(null, {
-        ip: info.ip,
-        org: info.org || "Unknown provider"
-      });
+      try {
+        const info = JSON.parse(data);
+        callback(null, {
+          ip: info.ip,
+          org: info.org || "Unknown provider"
+        });
+      } catch (e) {
+        callback(e);
+      }
     });
   }).on("error", (err) => {
     callback(err);
@@ -39,7 +52,7 @@ ${providerText}
     service: "gmail",
     auth: {
       user: "support@postify.co.il",
-      pass: "mwib fxwi ncwc vwzd", // ← הסיסמה שלך כאן
+      pass: "mwib fxwi ncwc vwzd",
     },
   });
 
@@ -52,8 +65,8 @@ ${providerText}
 
   transporter.sendMail(mailOptions, (error, info) => {
     if (error) {
-      return console.error("שגיאה בשליחת מייל:", error);
+      return console.error("❌ שגיאה בשליחת מייל:", error);
     }
-    console.log("הודעת מייל נשלחה:", info.response);
+    console.log("📧 הודעת מייל נשלחה:", info.response);
   });
 });

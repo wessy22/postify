@@ -100,12 +100,12 @@ const postText = postData.text;
     await textbox.click();
     await humanType(textbox, postText);
 
-    console.log("🟢 Clicking 'תמונה או סרטון' button...");
-    const uploadButtonSelector = 'div[role="dialog"] div[aria-label="תמונה או סרטון"][role="button"]';
-    await page.waitForSelector(uploadButtonSelector, { timeout: 10000 });
-    const uploadButton = await page.$(uploadButtonSelector);
-    await uploadButton.click();
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    console.log("🟢 Clicking 'תמונה או סרטון / Photo/video' button...");
+const uploadButtonSelector = 'div[role="dialog"] div[aria-label="תמונה או סרטון"][role="button"], div[role="dialog"] div[aria-label="Photo/video"][role="button"]';
+await page.waitForSelector(uploadButtonSelector, { timeout: 10000 });
+const uploadButton = await page.$(uploadButtonSelector);
+await uploadButton.click();
+await new Promise(resolve => setTimeout(resolve, 1500));
 
     for (const imagePath of postData.images) {
       console.log(`📋 Copying ${imagePath} to clipboard...`);
@@ -137,14 +137,14 @@ const postText = postData.text;
     }
 
     console.log("📤 Publishing post...");
-    const publishButtons = await page.$$('div[role="dialog"] [role="button"]');
-    for (let btn of publishButtons) {
-      const text = await page.evaluate(el => el.innerText.trim(), btn);
-      if (text === "פרסמי" || text === "פרסם" || text === "Publish") {
-        await btn.click();
-        break;
-      }
-    }
+const publishButtons = await page.$$('div[role="dialog"] [role="button"]');
+for (let btn of publishButtons) {
+  const text = await page.evaluate(el => el.innerText.trim(), btn);
+  if (text === "פרסמי" || text === "פרסם" || text === "Publish" || text === "Post") { 
+    await btn.click();
+    break;
+  }
+}
 
     console.log("⏳ Waiting 90 seconds after publish...");
     await new Promise(resolve => setTimeout(resolve, 90000));

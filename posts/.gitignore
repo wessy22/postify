@@ -17,16 +17,8 @@ spreadsheet-cost.json
 spreadsheet-logtosheet.json
 spreadsheet-startup.json
 /chrome-profiles/
-post1.json
-post2.json
-post3.json
-post4.json
-post5.json
-post6.json
-post7.json
-post8.json
-post9.json
-post10.json
+posts/post*.json
+
 
 
 

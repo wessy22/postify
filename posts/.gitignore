@@ -1,0 +1,24 @@
+/chrome-profile/
+.tmp.driveupload/
+*.tmp
+*.log
+*.bak
+*.zip
+*.rar
+*.7z
+credentials.json 
+posts/credentials.json
+log.txt
+downloaded-posts/
+group hunter/
+instance-name.txt
+spreadsheet.json
+spreadsheet-cost.json
+spreadsheet-logtosheet.json
+spreadsheet-startup.json
+/chrome-profiles/
+posts/post*.json
+
+
+
+

@@ -1,0 +1,5 @@
+2025/05/20-15:00:00.511 1b48 Table #4: 2 entries OK
+2025/05/20-15:00:00.512 1b48 Table #7: 57 entries OK
+2025/05/20-15:00:00.512 1b48 Table #10: 1 entries OK
+2025/05/20-15:00:01.527 1b48 Archiving C:\postify\chrome-profiles\postify\Default\Site Characteristics Database/MANIFEST-000001: IO error: C:\postify\chrome-profiles\postify\Default\Site Characteristics Database/MANIFEST-000001: Could not rename file: Access denied. (ChromeMethodBFE: 14::RenameFile::5)
+2025/05/20-15:00:01.556 1b48 **** Repaired leveldb C:\postify\chrome-profiles\postify\Default\Site Characteristics Database; recovered 3 files; 1119 bytes. Some data may have been lost. ****

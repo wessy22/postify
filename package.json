@@ -1,0 +1,32 @@
+{
+  "name": "postify",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "commonjs",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@google-cloud/bigquery": "^8.0.0",
+    "@google-cloud/compute": "^5.2.0",
+    "@google-cloud/scheduler": "^5.1.0",
+    "@nut-tree-fork/nut-js": "^4.2.6",
+    "axios": "^1.8.4",
+    "body-parser": "^2.2.0",
+    "chrome-launcher": "^1.1.2",
+    "clipboardy": "^4.0.0",
+    "express": "^5.1.0",
+    "googleapis": "^148.0.0",
+    "ip": "^2.0.1",
+    "mysql2": "^3.14.1",
+    "nodemailer": "^6.10.1",
+    "puppeteer": "^24.6.1",
+    "puppeteer-core": "^24.6.1",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
+  }
+}

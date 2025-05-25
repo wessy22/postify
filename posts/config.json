@@ -1,0 +1,19 @@
+{
+  "chromePath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  "userDataDir": "C:\\postify\\chrome-profiles\\postify",
+  "logFile": "log.txt",
+  "stateFile": "state.json",
+  "currentGroupFile": "current-group.txt",
+  "reportsDir": "C:/postify/reports",
+  "minDelaySec": 600,
+  "maxDelaySec": 960,
+  "initialDelayMaxSec": 900,
+  "shutdownHour": 1,
+  "spreadsheetId": "1o8AOOy6LBr6yBwb1tDhXLriOFkqle0hV2VH4V1Ykor0",
+  "email": {
+    "user": "support@postify.co.il",
+    "pass": "mwib fxwi ncwc vwzd",
+    "to": "yehiad82@gmail.com",
+    "errorTo": "support@postify.co.il"
+  }
+}

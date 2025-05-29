@@ -18,7 +18,7 @@ const { sendErrorMail, sendMail } = require("./mailer");
     function shouldStopByHour() {
       const israelTime = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Jerusalem' });
       const hour = new Date(israelTime).getHours();
-      console.log("🕒 שעה לפי ישראל:", hour);
+      console.log("🕒 Time in Israel :", hour);
       return hour >= 23;
     }
 
@@ -192,7 +192,7 @@ const { sendErrorMail, sendMail } = require("./mailer");
             <b>Postify</b>
           </div>`
         );
-        log("📧 נשלח מייל ללקוח על תחילת הפרסום.");
+        log("📧 Email sent - advertising started");
       } catch (e) {
         log("❌ שגיאה בשליחת מייל תחילת פרסום: " + e.message);
         await sendErrorMail("❌ שגיאה בשליחת מייל תחילת פרסום", e.message);
@@ -219,7 +219,7 @@ if (fileArgIndex !== -1 && args[fileArgIndex + 1]) {
 } else {
   const postIndex = (day % postFiles.length) + 1;
   postFile = `post${postIndex}.json`;
-  log(`📅 היום יום ${["ראשון","שני","שלישי","רביעי","חמישי","שישי"][day]} — נבחר: ${postFile}`);
+  log(`📅 Today is ${["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday"][day]} — נבחר: ${postFile}`);
 }
 
 
@@ -253,7 +253,7 @@ if (!skipDelay) {
   log(`⏳ Starting random delay of ${delayMin} minutes and ${delaySec} seconds...`);
   await countdown(initialDelay);
 } else {
-  log("⏩ מופעל עם --now – מדלג על ההשהיה הראשונית");
+  log("⏩ Enabled with --now – skips the initial delay");
 }
 
       await runPostFromIndex(startIndex, groups, postFile, results);

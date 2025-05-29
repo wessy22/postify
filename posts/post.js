@@ -87,13 +87,26 @@ const humanType = async (element, text) => {
     await logToSheet('Post started', 'Info', groupUrl, 'Navigated to group page');
 
     console.log("🧭 Looking for composer...");
-    const buttons = await page.$$('div[role="button"]');
-    for (let button of buttons) {
-      const text = await page.evaluate(el => el.textContent, button);
-      if (text.includes("כאן כותבים") || text.includes("Write something")) {
-        await button.click();
-        break;
+
+    let composerFound = false;
+    for (let scrollTry = 0; scrollTry < 10 && !composerFound; scrollTry++) {
+      const buttons = await page.$$('div[role="button"]');
+      for (let button of buttons) {
+        const text = await page.evaluate(el => el.textContent, button);
+        if (text.includes("כאן כותבים") || text.includes("Write something")) {
+          await button.click();
+          composerFound = true;
+          break;
+        }
       }
+      if (!composerFound) {
+        // גלילה איטית למטה
+        await page.evaluate(() => window.scrollBy(0, 200));
+        await new Promise(r => setTimeout(r, 500));
+      }
+    }
+    if (!composerFound) {
+      throw new Error('לא נמצא כפתור "כאן כותבים"');
     }
 
     console.log("📝 Typing post text...");

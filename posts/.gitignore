@@ -26,3 +26,6 @@ force-git-push.bat
 backup-VM-now.bat
 \user data
 /user data
+posts/credentials.json
+credentials.json
+

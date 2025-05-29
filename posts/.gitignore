@@ -5,8 +5,6 @@
 *.zip
 *.rar
 *.7z
-credentials.json 
-posts/credentials.json
 log.txt
 downloaded-posts/
 group hunter/

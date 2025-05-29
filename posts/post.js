@@ -88,25 +88,95 @@ const humanType = async (element, text) => {
 
     console.log("🧭 Looking for composer...");
 
-    let composerFound = false;
-    for (let scrollTry = 0; scrollTry < 10 && !composerFound; scrollTry++) {
-      const buttons = await page.$$('div[role="button"]');
-      for (let button of buttons) {
-        const text = await page.evaluate(el => el.textContent, button);
-        if (text.includes("כאן כותבים") || text.includes("Write something")) {
-          await button.click();
-          composerFound = true;
-          break;
+    async function findComposer(page) {
+      for (let scrollTry = 0; scrollTry < 10; scrollTry++) {
+        const buttons = await page.$$('div[role="button"]');
+        for (let button of buttons) {
+          const text = await page.evaluate(el => el.textContent, button);
+          if (
+            text.includes("כאן כותבים") ||
+            text.includes("Write something")
+          ) {
+            await button.click();
+            return true;
+          }
         }
-      }
-      if (!composerFound) {
         // גלילה איטית למטה
         await page.evaluate(() => window.scrollBy(0, 200));
         await new Promise(r => setTimeout(r, 500));
       }
+      return false;
     }
+
+    let composerFound = await findComposer(page);
+
+    // אם לא נמצא - רענון ונסיון נוסף
     if (!composerFound) {
-      throw new Error('לא נמצא כפתור "כאן כותבים"');
+      console.log("🔄 Composer not found, refreshing page and retrying...");
+      await page.reload({ waitUntil: "networkidle2" });
+      await new Promise(r => setTimeout(r, 2000));
+      composerFound = await findComposer(page);
+    }
+
+    // אם עדיין לא נמצא - רענון נוסף ואז חיפוש "דיון"/"Discussion"
+    if (!composerFound) {
+      console.log("🔄 Composer still not found, refreshing again before searching for 'דיון' tab...");
+      await page.reload({ waitUntil: "networkidle2" });
+      await new Promise(r => setTimeout(r, 2000));
+
+      console.log("🔎 Looking for 'דיון' or 'Discussion' tab...");
+      const tabButtons = await page.$$('a[role="tab"], div[role="tab"], span[role="tab"], div[role="button"], a[role="button"]');
+      let discussionTabFound = false;
+      for (let tab of tabButtons) {
+        const text = await page.evaluate(el => el.textContent, tab);
+        if (
+          text.trim() === "דיון" ||
+          text.trim().toLowerCase() === "discussion"
+        ) {
+          await tab.click();
+          discussionTabFound = true;
+          console.log("✅ Clicked on 'דיון'/'Discussion' tab.");
+          await new Promise(r => setTimeout(r, 2000));
+          break;
+        }
+      }
+      // נסה שוב למצוא composer (כולל באנגלית)
+      if (discussionTabFound) {
+        composerFound = await findComposer(page);
+      }
+    }
+
+    // אם עדיין לא נמצא - רענון נוסף, המתנה 2 דקות, גלילה איטית, ואם לא נמצא - שגיאה ומעבר לקבוצה הבאה
+    if (!composerFound) {
+      console.log("🔄 Composer still not found after 'דיון', refreshing again and waiting 2 minutes before last attempt...");
+      await page.reload({ waitUntil: "networkidle2" });
+      await new Promise(r => setTimeout(r, 120000)); // 2 דקות
+
+      // ניסיון אחרון: גלילה איטית ומציאת composer
+      composerFound = false;
+      for (let scrollTry = 0; scrollTry < 15; scrollTry++) {
+        const buttons = await page.$$('div[role="button"]');
+        for (let button of buttons) {
+          const text = await page.evaluate(el => el.textContent, button);
+          if (
+            text.includes("כאן כותבים") ||
+            text.includes("Write something")
+          ) {
+            await button.click();
+            composerFound = true;
+            break;
+          }
+        }
+        if (composerFound) break;
+        await page.evaluate(() => window.scrollBy(0, 200));
+        await new Promise(r => setTimeout(r, 700));
+      }
+
+      if (!composerFound) {
+        console.log("❌ Composer not found after all attempts. Skipping to next group...");
+        await logToSheet('Composer not found', 'Error', groupUrl, 'לא נמצא כפתור "כאן כותבים" גם אחרי רענון, המתנה וגלילה');
+        throw new Error('לא נמצא כפתור "כאן כותבים" / "Write something" גם לאחר רענון, המתנה וגלילה');
+      }
     }
 
     console.log("📝 Typing post text...");

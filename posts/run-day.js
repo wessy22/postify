@@ -45,6 +45,7 @@ const { sendErrorMail, sendMail } = require("./mailer");
 
         if (fs.existsSync(STATE_FILE)) fs.unlinkSync(STATE_FILE);
 
+      /*
         const reportLines = results.map(r => `${r.status} ${r.name} – ${r.time}`);
         const summary = reportLines.join("\n");
 
@@ -57,7 +58,8 @@ const { sendErrorMail, sendMail } = require("./mailer");
           log("❌ שגיאה בשליחת הדוח: " + e.message);
           await sendErrorMail("❌ שגיאה בשליחת דוח יומי", e.message);
         }
-
+      */
+     
         log("🕒 סיום פרסום – כיבוי בעוד 5 דקות...");
 
         setTimeout(() => {
@@ -219,7 +221,7 @@ if (fileArgIndex !== -1 && args[fileArgIndex + 1]) {
 } else {
   const postIndex = (day % postFiles.length) + 1;
   postFile = `post${postIndex}.json`;
-  log(`📅 Today is ${["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday"][day]} — נבחר: ${postFile}`);
+  log(`📅 Today is ${["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday"][day]} — ${postFile} is selected`);
 }
 
 

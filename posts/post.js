@@ -118,6 +118,38 @@ const humanType = async (element, text) => {
       composerFound = await findComposer(page);
     }
 
+    // אם לא נמצא composer - בדוק אם יש כפתור "הצטרף לקבוצה" או "Join Group"
+if (!composerFound) {
+  console.log("🔎 Checking for 'הצטרף לקבוצה'/'Join Group' button...");
+  const joinButtonSelectors = [
+    'div[role="button"]', 'a[role="button"]', 'button'
+  ];
+  let joinClicked = false;
+  for (const selector of joinButtonSelectors) {
+    const buttons = await page.$$(selector);
+    for (let button of buttons) {
+      const text = await page.evaluate(el => el.textContent.trim(), button);
+      if (
+        text === "הצטרף לקבוצה" ||
+        text === "הצטרפי לקבוצה" ||
+        text.toLowerCase() === "join group" ||
+        text.toLowerCase() === "join"
+      ) {
+        await button.click();
+        joinClicked = true;
+        console.log("✅ Clicked join group button. Waiting 20 seconds...");
+        await new Promise(r => setTimeout(r, 20000));
+        break;
+      }
+    }
+    if (joinClicked) break;
+  }
+  if (joinClicked) {
+    await page.reload({ waitUntil: "networkidle2" });
+    await new Promise(r => setTimeout(r, 2000));
+    composerFound = await findComposer(page);
+  }
+}
     // אם עדיין לא נמצא - רענון נוסף ואז חיפוש "דיון"/"Discussion"
     if (!composerFound) {
       console.log("🔄 Composer still not found, refreshing again before searching for 'דיון' tab...");

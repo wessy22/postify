@@ -30,11 +30,9 @@ force-git-push.bat
 backup-VM-now.bat
 user data/
 /user data
-# 🧱 ספריות node – לא לגבות
 node_modules/
 postify logo.png
 backup-VM-now.bat
-# 📦 קבצים זמניים / שלא רוצים בגיבוי
 package-lock.json
 package.json
 files.txt
@@ -42,15 +40,6 @@ state-post.json
 package.json
 postify logo.png
 package-lock.json
-# 🛠 קבצי סקריפטים זמניים
-*.bat
-*.ps1
-enable-autologin.reg
-forc
-e-git-push.bat
-# 📝 תצוגת מערכת
-.DS_Store
-Thumbs.db
 update.bat
 push-to-github.bat
 reset git.bat

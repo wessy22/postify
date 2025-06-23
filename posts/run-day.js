@@ -8,9 +8,37 @@ const { sendErrorMail, sendMail } = require("./mailer");
     const logToSheet = require("./log-to-sheets");
     const config = require("./config.json");
 
-    const instanceName = fs.readFileSync("C:\\postify\\posts\\instance-name.txt", "utf-8").trim();
+    let instanceName;
+    let instanceTries = 0;
+    while (instanceTries < 2) {
+      try {
+        instanceName = fs.readFileSync("C:\\postify\\posts\\instance-name.txt", "utf-8").trim();
+        break;
+      } catch (e) {
+        instanceTries++;
+        console.error("❌ שגיאה בקריאת instance-name.txt:", e.message);
+        await sendErrorMail("❌ שגיאה בקריאת instance-name.txt", e.message);
+        if (instanceTries < 2) {
+          log("🔁 מנסה שוב לקרוא את instance-name.txt בעוד 10 שניות...");
+          await new Promise(r => setTimeout(r, 10000));
+        } else {
+          log("⏭️ מדלג ליום הבא (או סיום)...");
+          return; // או המשך ללולאה/יום הבא
+        }
+      }
+    }
     const POSTS_FOLDER = `C:\\postify\\user data\\${instanceName}\\posts`;
     const LOG_FILE = path.join(__dirname, config.logFile);
+
+    // יש להזיז את זה למעלה לפני כל שימוש ב-log
+    const logStream = fs.createWriteStream(LOG_FILE, { flags: "a" });
+    const log = (text) => {
+      const timestamp = new Date().toLocaleString("sv-SE", { timeZone: "Asia/Jerusalem" }).replace(" ", "T");
+      const line = `[${timestamp}] ${text}`;
+      console.log(text);
+      logStream.write(line + "\n");
+    };
+
     const day = new Date().getDay();
     const todayStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
@@ -50,6 +78,7 @@ const { sendErrorMail, sendMail } = require("./mailer");
 
     const STATE_POST_FILE = path.join(__dirname, "state-post.json"); // ← שם חדש
     const CURRENT_GROUP_NAME_FILE = path.join(__dirname, config.currentGroupFile);
+    const LAST_POST_FILE = path.join(__dirname, "last-post.txt"); // ← חדש
 
     function shouldStopByHour() {
       const israelTime = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Jerusalem' });
@@ -57,14 +86,6 @@ const { sendErrorMail, sendMail } = require("./mailer");
       console.log("🕒 Time in Israel :", hour);
       return hour >= 23;
     }
-
-    const logStream = fs.createWriteStream(LOG_FILE, { flags: "a" });
-    const log = (text) => {
-      const timestamp = new Date().toLocaleString("sv-SE", { timeZone: "Asia/Jerusalem" }).replace(" ", "T");
-      const line = `[${timestamp}] ${text}`;
-      console.log(text);
-      logStream.write(line + "\n");
-    };
 
     async function countdown(seconds) {
       for (let i = seconds; i > 0; i--) {
@@ -74,7 +95,7 @@ const { sendErrorMail, sendMail } = require("./mailer");
       console.log();
     }
 
-    async function runPostFromIndex(index, groups, postFile, results) {
+    async function runPostFromIndex(index, groups, postFile, results, retryCount = 0) {
       if (index >= groups.length) {
         log("✅ כל הקבוצות פורסמו!");
         await logToSheet("Day finished", "Success", "", "כל הקבוצות פורסמו");
@@ -139,18 +160,38 @@ const { sendErrorMail, sendMail } = require("./mailer");
 
       const groupUrl = groups[index];
       log(`📢 posting to group(${index + 1}/${groups.length}): ${groupUrl}`);
-      await logToSheet("Publishing to group", "Started", groupUrl, `קבוצה ${index + 1}/${groups.length}`);
+      await logToSheet("Publishing to group", "Started", groupUrl, `Group ${index + 1}/${groups.length}`);
 
-      fs.writeFileSync(STATE_POST_FILE, JSON.stringify({ file: postFile, index }), "utf-8");
+      // שמור גם את התאריך הנוכחי!
+      const todayIso = new Date().toISOString().slice(0, 10);
+      fs.writeFileSync(STATE_POST_FILE, JSON.stringify({ file: postFile, index, date: todayIso }), "utf-8");
 
       const child = spawn("node", ["post.js", groupUrl, postFile], { stdio: "inherit" });
 
-      child.on("error", async (error) => {
-        log(`❌ שגיאה בהרצת post.js: ${error.message}`);
-        await sendErrorMail("❌ שגיאה בהרצת post.js", `שגיאה בפרסום לקבוצה ${groupUrl}: ${error.message}`);
-      });
+// קובע timeout לקבוצה (למשל 13 דקות)
+const TIMEOUT = 13 * 60 * 1000;
+let timeoutId = setTimeout(() => {
+  log(`⏰ Timeout! post.js לקח יותר מ־13 דקות. סוגר תהליך וממשיך...`);
+  child.kill("SIGKILL"); // הורג בכח את התהליך
+  // שליחת מייל/לוג
+  sendErrorMail("⏰ Timeout - קבוצה נתקעה", `הקבוצה ${groupUrl} נתקעה ליותר מ־13 דקות ונעצרה אוטומטית.`);
+}, TIMEOUT);
 
-      child.on("exit", async (code) => {
+child.on("error", async (error) => {
+  clearTimeout(timeoutId);
+  log(`❌ שגיאה בהרצת post.js: ${error.message}`);
+  await sendErrorMail("❌ שגיאה בהרצת post.js", `שגיאה בפרסום לקבוצה ${groupUrl}: ${error.message}`);
+  if (retryCount < 1) {
+    log("🔁 מנסה שוב לפרסם לקבוצה...");
+    setTimeout(() => runPostFromIndex(index, groups, postFile, results, retryCount + 1), 10000); // נסה שוב אחרי 10 שניות
+  } else {
+    log("⏭️ מדלג לקבוצה הבאה...");
+    runPostFromIndex(index + 1, groups, postFile, results);
+  }
+});
+
+child.on("exit", async (code) => {
+  clearTimeout(timeoutId); // תמיד ננקה את ה־timeout
         const now = new Date();
         const time = now.toLocaleTimeString("he-IL", { hour: '2-digit', minute: '2-digit' });
         const statusText = code === 0 ? "✅" : "❌";
@@ -192,6 +233,13 @@ const { sendErrorMail, sendMail } = require("./mailer");
           const reason = explainExitCode(code);
           const msg = `❌ הפרסום לקבוצה ${groupName} נכשל.\n\n📄 סיבה אפשרית: ${reason}`;
           await sendErrorMail("❌ שגיאה בפרסום לקבוצה", msg);
+          if (retryCount < 1) {
+            log("🔁 מנסה שוב לפרסם לקבוצה...");
+            setTimeout(() => runPostFromIndex(index, groups, postFile, results, retryCount + 1), 10000); // נסה שוב אחרי 10 שניות
+            return;
+          } else {
+            log("⏭️ מדלג לקבוצה הבאה...");
+          }
         }
         
         const delaySec = config.minDelaySec + Math.floor(Math.random() * (config.maxDelaySec - config.minDelaySec + 1));
@@ -236,7 +284,25 @@ const { sendErrorMail, sendMail } = require("./mailer");
       }
 
       // --- לוגיקה חדשה: מעבר לפי קבצים קיימים בלבד ---
-      const allFiles = fs.readdirSync(POSTS_FOLDER);
+      let allFiles;
+      let postsFolderTries = 0;
+      while (postsFolderTries < 2) {
+        try {
+          allFiles = fs.readdirSync(POSTS_FOLDER);
+          break;
+        } catch (e) {
+          postsFolderTries++;
+          log("❌ שגיאה בקריאת תיקיית הפוסטים: " + e.message);
+          await sendErrorMail("❌ שגיאה בקריאת תיקיית הפוסטים", e.message);
+          if (postsFolderTries < 2) {
+            log("🔁 מנסה שוב לקרוא את תיקיית הפוסטים בעוד 10 שניות...");
+            await new Promise(r => setTimeout(r, 10000));
+          } else {
+            log("⏭️ מדלג ליום הבא (או סיום)...");
+            return;
+          }
+        }
+      }
       const postFiles = allFiles
         .filter(f => /^post\d+\.json$/.test(f))
         .map(f => ({
@@ -248,60 +314,102 @@ const { sendErrorMail, sendMail } = require("./mailer");
       if (postFiles.length === 0) {
         log("❌ לא נמצאו קבצי postX.json בתיקייה.");
         await sendErrorMail("❌ לא נמצאו פוסטים", "לא נמצא אף פוסט מסוג postX.json בתיקייה.");
-        process.exit(1);
+        log("⏭️ מדלג ליום הבא (או סיום)...");
+        return;
       }
 
       // בדיקה אם יש שימוש ב־--file <filename>
       const fileArgIndex = args.indexOf("--file");
       let postFile;
+      let startIndex = 0;
 
+      // --- לוגיקת בחירת פוסט לפי קובץ last-post.txt בלבד ---
       if (fileArgIndex !== -1 && args[fileArgIndex + 1]) {
         postFile = args[fileArgIndex + 1];
         log(`📂 הופעל עם קובץ מותאם: ${postFile}`);
       } else {
-        // קרא את ה־state כדי לדעת איזה פוסט היה האחרון
-        let lastPostNum = null;
+        let state = null;
         if (fs.existsSync(STATE_POST_FILE)) {
           try {
-            const state = JSON.parse(fs.readFileSync(STATE_POST_FILE, "utf-8"));
-            const match = state.file && state.file.match(/^post(\d+)\.json$/);
-            if (match) lastPostNum = parseInt(match[1], 10);
+            state = JSON.parse(fs.readFileSync(STATE_POST_FILE, "utf-8"));
           } catch (e) {
-            log("⚠️ לא ניתן לקרוא את קובץ ה־state-post. מתחיל מההתחלה.");
-            await sendErrorMail("⚠️ שגיאה בקריאת קובץ state-post", `לא ניתן לקרוא את קובץ ה־state-post: ${e.message}`);
+            log("⚠️ לא ניתן לקרוא את קובץ ה־state-post. מתעלם ממנו.");
           }
         }
-        // מצא את הפוסט הבא ברשימה
-        let nextPost;
-        if (lastPostNum === null) {
-          nextPost = postFiles[0];
+
+        if (
+          state &&
+          state.date === todayStr &&
+          typeof state.index === "number" &&
+          state.file &&
+          postFiles.find(f => f.name === state.file)
+        ) {
+          // המשך פרסום מהנקודה האחרונה של היום
+          postFile = state.file;
+          startIndex = state.index;
+          log(`🔁 ממשיך מהפוסט של היום: ${postFile}, Group ${startIndex + 1}`);
         } else {
-          nextPost = postFiles.find(f => f.num > lastPostNum);
-          if (!nextPost) {
-            // אם רוצים לחזור להתחלה:
-            nextPost = postFiles[0];
-            // אם לא רוצים – אפשר לעצור כאן:
-            // log("🛑 כל הפוסטים פורסמו. אין פוסט נוסף.");
-            // process.exit(0);
+          // יום חדש או אין state תקין – עבור לפוסט הבא לפי last-post.txt
+          let lastPostName = null;
+          if (fs.existsSync(LAST_POST_FILE)) {
+            try {
+              lastPostName = fs.readFileSync(LAST_POST_FILE, "utf-8").trim();
+            } catch (e) {
+              log("⚠️ לא ניתן לקרוא את last-post.txt. מתחיל מההתחלה.");
+            }
           }
+          let nextIdx = 0;
+          if (lastPostName) {
+            const lastIdx = postFiles.findIndex(f => f.name === lastPostName);
+            if (lastIdx !== -1) {
+              nextIdx = (lastIdx + 1) % postFiles.length;
+            }
+          }
+          postFile = postFiles[nextIdx].name;
+          startIndex = 0;
+          log(`📅 Today is: ${postFile}`);
+          fs.writeFileSync(LAST_POST_FILE, postFile, "utf-8");
+          fs.writeFileSync(STATE_POST_FILE, JSON.stringify({ file: postFile, index: 0, date: todayStr }), "utf-8");
+          await logToSheet("Day started", "Info", "", `פוסט נבחר: ${postFile}`);
         }
-        postFile = nextPost.name;
-        log(`📅 Today is: ${postFile}`);
       }
 
       const postPath = path.join(POSTS_FOLDER, postFile);
-      await logToSheet("Day started", "Info", "", `פוסט נבחר: ${postFile}`);
-
-      const postData = JSON.parse(fs.readFileSync(postPath, "utf-8"));
+      let postData;
+      let postReadTries = 0;
+      while (postReadTries < 2) {
+        try {
+          postData = JSON.parse(fs.readFileSync(postPath, "utf-8"));
+          break;
+        } catch (e) {
+          postReadTries++;
+          log("❌ שגיאה בקריאת קובץ הפוסט: " + e.message);
+          await sendErrorMail("❌ שגיאה בקריאת קובץ הפוסט", e.message);
+          if (postReadTries < 2) {
+            log("🔁 מנסה שוב לקרוא את קובץ הפוסט בעוד 10 שניות...");
+            await new Promise(r => setTimeout(r, 10000));
+          } else {
+            log("⏭️ מדלג לפוסט הבא...");
+            // כאן תוכל להפעיל main מחדש או לעבור לפוסט הבא בלולאה
+            return main(); // או כל לוגיקה שלך
+          }
+        }
+      }
       const groups = postData.groups;
 
       const results = [];
 
-      let startIndex = 0;
+      // המשך פרסום באותו יום (אם הופסק באמצע)
+      startIndex = 0;
       if (fs.existsSync(STATE_POST_FILE)) {
         try {
           const state = JSON.parse(fs.readFileSync(STATE_POST_FILE, "utf-8"));
-          if (state.file === postFile && state.index < groups.length) {
+          if (
+            state.file === postFile &&
+            state.date === todayStr &&
+            typeof state.index === "number" &&
+            state.index < groups.length
+          ) {
             startIndex = state.index;
             log(`🔁Continuing from the last group ${startIndex + 1}/${groups.length}`);
           }
@@ -328,16 +436,15 @@ const { sendErrorMail, sendMail } = require("./mailer");
     await main();
   } catch (err) {
     console.error("❌ שגיאה באוטומציה:", err);
-
-    const message = [
+    await sendErrorMail("❌ שגיאה באוטומציה", [
       `🛑 התרחשה שגיאה בסקריפט: ${__filename}`,
       "",
       `❗ שגיאה: ${err.message}`,
       "",
       err.stack,
-    ].join("\n");
-
-    await sendErrorMail("❌ שגיאה באוטומציה", message);
-    process.exit(1);
+    ].join("\n"));
+    log("⏭️ ממשיך הלאה...");
+    // אפשר להפעיל main מחדש, או פשוט לא לעשות כלום
+    return;
   }
 })();

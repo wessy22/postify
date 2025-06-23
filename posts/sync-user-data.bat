@@ -2,4 +2,5 @@
 cd /d %~dp0
 echo 📁 Running sync-user-data.js ...
 node sync-user-data.js
-pause
+echo 🕒 Waiting 10 seconds before closing...
+timeout /t 10 

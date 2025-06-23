@@ -12,10 +12,11 @@ const auth = new google.auth.JWT(
   ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
 );
 
-// שליפת שם השרת מתוך קובץ instance-name.txt
 const instanceName = fs.readFileSync(path.join(__dirname, 'instance-name.txt'), 'utf-8').trim();
 const spreadsheetPath = path.join(__dirname, `spreadsheet-logtosheet.json`);
 let spreadsheetId = '';
+let conditionalFormattingChecked = false;
+const validatedSheets = new Set();
 
 async function ensureSpreadsheetExists() {
   if (fs.existsSync(spreadsheetPath)) {
@@ -28,9 +29,7 @@ async function ensureSpreadsheetExists() {
 
   const title = `LogToSheet-${instanceName}`;
   const spreadsheet = await sheets.spreadsheets.create({
-    resource: {
-      properties: { title },
-    },
+    resource: { properties: { title } },
     auth,
   });
 
@@ -50,100 +49,35 @@ async function ensureSpreadsheetExists() {
   console.log(`🆕 Spreadsheet created: ${spreadsheetId}`);
 }
 
-async function getOrCreateSheet(sheetName, spreadsheetId) {
+async function getOrCreateSheet(sheetName) {
+  if (validatedSheets.has(sheetName)) return;
+  validatedSheets.add(sheetName);
+
   const meta = await sheets.spreadsheets.get({
     spreadsheetId,
     auth,
   });
 
   const existingSheet = meta.data.sheets.find(s => s.properties.title === sheetName);
-  if (existingSheet) {
-    // בדוק אם יש כבר עיצוב מותנה
-    const rules = await sheets.spreadsheets.get({
-      spreadsheetId,
-      ranges: [`${sheetName}!A:E`],
-      fields: 'sheets.properties.sheetId,sheets.conditionalFormats',
-      auth,
-    });
+  if (existingSheet) return;
 
-    // אם אין עיצוב מותנה, נוסיף אותו
-    if (!rules.data.sheets[0].conditionalFormats || rules.data.sheets[0].conditionalFormats.length === 0) {
-      console.log('🎨 Adding conditional formatting rules...');
-      const sheetId = existingSheet.properties.sheetId;
-      console.log(`📊 Sheet ID: ${sheetId}`);
-      
-      await sheets.spreadsheets.batchUpdate({
-        spreadsheetId,
-        auth,
-        requestBody: {
-          requests: [
-            {
-              addConditionalFormatRule: {
-                rule: {
-                  ranges: [{ sheetId, startRowIndex: 0, endRowIndex: 1000, startColumnIndex: 2, endColumnIndex: 3 }],
-                  booleanRule: {
-                    condition: {
-                      type: 'TEXT_EQ',
-                      values: [{ userEnteredValue: 'Success' }]
-                    },
-                    format: {
-                      backgroundColor: { red: 0.776, green: 0.937, blue: 0.808 },
-                      textFormat: { foregroundColor: { red: 0, green: 0.38, blue: 0 } }
-                    }
-                  }
-                }
-              }
-            },
-            {
-              addConditionalFormatRule: {
-                rule: {
-                  ranges: [{ sheetId, startRowIndex: 0, endRowIndex: 1000, startColumnIndex: 2, endColumnIndex: 3 }],
-                  booleanRule: {
-                    condition: {
-                      type: 'TEXT_EQ',
-                      values: [{ userEnteredValue: 'Error' }]
-                    },
-                    format: {
-                      backgroundColor: { red: 1, green: 0, blue: 0 },
-                      textFormat: { foregroundColor: { red: 1, green: 1, blue: 1 } }
-                    }
-                  }
-                }
-              }
-            }
-          ]
-        }
-      });
-      console.log('✅ Conditional formatting rules added');
-    }
-    return;
-  }
-
-  // יצירת גיליון חדש
   await sheets.spreadsheets.batchUpdate({
-    spreadsheetId,
-    auth,
-    requestBody: {
-      requests: [
-        {
-          addSheet: {
-            properties: {
-              title: sheetName,
-            },
-          },
-        },
-      ],
-    },
-  });
+  spreadsheetId,
+  auth,
+  requestBody: {
+    requests: [
+      {
+        addSheet: {
+          properties: {
+            title: sheetName,
+            index: 0 // מוסיף את הגיליון בתחילת הרשימה
+          }
+        }
+      }
+    ]
+  }
+});
 
-  const sheetId = (await sheets.spreadsheets.get({
-    spreadsheetId,
-    ranges: [sheetName],
-    fields: 'sheets.properties.sheetId',
-    auth,
-  })).data.sheets[0].properties.sheetId;
-
-  // הוספת כותרות
   await sheets.spreadsheets.values.update({
     spreadsheetId,
     range: `${sheetName}!A1:E1`,
@@ -154,54 +88,13 @@ async function getOrCreateSheet(sheetName, spreadsheetId) {
     auth,
   });
 
-  // הוספת עיצוב מותנה
-  await sheets.spreadsheets.batchUpdate({
-    spreadsheetId,
-    auth,
-    requestBody: {
-      requests: [
-        {
-          addConditionalFormatRule: {
-            rule: {
-              ranges: [{ sheetId, startRowIndex: 0, endRowIndex: 1000, startColumnIndex: 2, endColumnIndex: 3 }],
-              booleanRule: {
-                condition: {
-                  type: 'TEXT_EQ',
-                  values: [{ userEnteredValue: 'Success' }]
-                },
-                format: {
-                  backgroundColor: { red: 0.776, green: 0.937, blue: 0.808 },
-                  textFormat: { foregroundColor: { red: 0, green: 0.38, blue: 0 } }
-                }
-              }
-            }
-          }
-        },
-        {
-          addConditionalFormatRule: {
-            rule: {
-              ranges: [{ sheetId, startRowIndex: 0, endRowIndex: 1000, startColumnIndex: 2, endColumnIndex: 3 }],
-              booleanRule: {
-                condition: {
-                  type: 'TEXT_EQ',
-                  values: [{ userEnteredValue: 'Error' }]
-                },
-                format: {
-                  backgroundColor: { red: 1, green: 0.78, blue: 0.808 },
-                  textFormat: { foregroundColor: { red: 0.61, green: 0, blue: 0.024 } }
-                }
-              }
-            }
-          }
-        }
-      ]
-    }
-  });
-
-  console.log('✅ Sheet created and initialized with conditional formatting');
+  console.log(`✅ Sheet created: ${sheetName}`);
 }
 
-async function ensureConditionalFormattingForAllSheets(spreadsheetId) {
+async function ensureConditionalFormattingOnce() {
+  if (conditionalFormattingChecked) return;
+  conditionalFormattingChecked = true;
+
   const meta = await sheets.spreadsheets.get({
     spreadsheetId,
     auth,
@@ -211,7 +104,6 @@ async function ensureConditionalFormattingForAllSheets(spreadsheetId) {
     const sheetId = sheet.properties.sheetId;
     const sheetTitle = sheet.properties.title;
 
-    // בדוק אם יש כבר עיצוב מותנה
     const rules = await sheets.spreadsheets.get({
       spreadsheetId,
       ranges: [`${sheetTitle}!A:E`],
@@ -220,7 +112,7 @@ async function ensureConditionalFormattingForAllSheets(spreadsheetId) {
     });
 
     if (!rules.data.sheets[0].conditionalFormats || rules.data.sheets[0].conditionalFormats.length === 0) {
-      console.log(`🎨 Adding conditional formatting rules to sheet: ${sheetTitle}`);
+      console.log(`🎨 Adding conditional formatting to ${sheetTitle}`);
       await sheets.spreadsheets.batchUpdate({
         spreadsheetId,
         auth,
@@ -263,36 +155,45 @@ async function ensureConditionalFormattingForAllSheets(spreadsheetId) {
           ]
         }
       });
-      console.log(`✅ Conditional formatting rules added to sheet: ${sheetTitle}`);
     }
   }
 }
 
-async function logToSheet(action, status, group = '', notes = '') {
-  await auth.authorize();
-  await ensureSpreadsheetExists();
+async function logToSheet(action, status, group = '', notes = '', attempt = 1) {
+  try {
+    await auth.authorize();
+    await ensureSpreadsheetExists();
 
-  // ודא עיצוב מותנה לכל הגיליונות, גם אם לא נכתבה שורה חדשה
-  await ensureConditionalFormattingForAllSheets(spreadsheetId);
+    const now = new Date();
+    const timestamp = now.toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' });
+    const dateSheetName = now.toLocaleDateString('he-IL', { timeZone: 'Asia/Jerusalem' }).replace(/\//g, '-');
 
-  const now = new Date();
-  const timestamp = now.toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' });
-  const dateSheetName = now.toLocaleDateString('he-IL', { timeZone: 'Asia/Jerusalem' }).replace(/\//g, '-');
+    await getOrCreateSheet(dateSheetName);
+    await ensureConditionalFormattingOnce();
 
-  await getOrCreateSheet(dateSheetName, spreadsheetId);
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: `${dateSheetName}!A:E`,
+      valueInputOption: 'RAW',
+      insertDataOption: 'INSERT_ROWS',
+      resource: {
+        values: [[timestamp, action, status, group, notes]],
+      },
+      auth,
+    });
 
-  await sheets.spreadsheets.values.append({
-    spreadsheetId,
-    range: `${dateSheetName}!A:E`,
-    valueInputOption: 'RAW',
-    insertDataOption: 'INSERT_ROWS',
-    resource: {
-      values: [[timestamp, action, status, group, notes]],
-    },
-    auth,
-  });
-
-  console.log(`✅ Log written to sheet: ${dateSheetName}`);
+    console.log(`✅ Log written to sheet: ${dateSheetName}`);
+  } catch (err) {
+    if ((err.code === 503 || (err.response && err.response.status === 503)) && attempt <= 3) {
+      const delay = 2000 * attempt; // 2s, 4s, 6s
+      console.warn(`⚠️ Google Sheets API unavailable (503). Retrying in ${delay / 1000}s... (Attempt ${attempt})`);
+      await new Promise(res => setTimeout(res, delay));
+      return logToSheet(action, status, group, notes, attempt + 1);
+    }
+    console.error('❌ Failed to log to sheet:', err.message || err);
+    // אפשר להוסיף כאן שליחת מייל אם תרצה
+    return false;
+  }
 }
 
 module.exports = logToSheet;

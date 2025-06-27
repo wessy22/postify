@@ -38,7 +38,7 @@ if (fs.existsSync(alivePath)) {
 
 // 3. שלח התראה אם יש תקלה
 if (!isProcessRunning || !isHeartbeatFresh) {
-  const subject = 'שגיאה חמורה 🚨';
+  const subject = `שגיאה חמורה 🚨 משרת "${serverName}"`;
   const body = [
     `🚨 התראה דחופה משרת: ${serverName}`,
     '',

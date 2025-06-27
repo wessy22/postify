@@ -319,22 +319,28 @@ const { sendErrorMail, sendMail } = require("./mailer");
       let allFiles;
       let postsFolderTries = 0;
       const MAX_POSTS_FOLDER_TRIES = 5; // נסה עד 5 פעמים (כלומר ~40 שניות)
+      let lastPostsFolderError = null;
       while (postsFolderTries < MAX_POSTS_FOLDER_TRIES) {
         try {
           allFiles = fs.readdirSync(POSTS_FOLDER);
           break;
         } catch (e) {
           postsFolderTries++;
+          lastPostsFolderError = e;
           log("❌ שגיאה בקריאת תיקיית הפוסטים: " + e.message);
-          await sendErrorMail("❌ שגיאה בקריאת תיקיית הפוסטים", e.message);
           if (postsFolderTries < MAX_POSTS_FOLDER_TRIES) {
             log("🔁 מנסה שוב לקרוא את תיקיית הפוסטים בעוד 10 שניות...");
             await new Promise(r => setTimeout(r, 10000));
           } else {
             log("⏭️ חורג ממספר ניסיונות – מסיים את היום.");
             updateHeartbeat({ group: "no-posts-folder", postFile: null, status: 'fatal-error', index: -1 });
-            await sendErrorMail("❌ סיום אוטומטי – תיקיית פוסטים לא קיימת", "המערכת ניסתה מספר פעמים ולא הצליחה לגשת לתיקיית הפוסטים.");
-            return;
+            await sendErrorMail(
+              "❌ סיום אוטומטי – תיקיית פוסטים לא קיימת",
+              "המערכת ניסתה מספר פעמים ולא הצליחה לגשת לתיקיית הפוסטים.\n\nשגיאה אחרונה:\n" + (lastPostsFolderError ? lastPostsFolderError.message : "")
+            );
+            log("💤 הסקריפט ייסגר בעוד 10 שניות...");
+            await new Promise(r => setTimeout(r, 10000));
+            process.exit(1);
           }
         }
       }

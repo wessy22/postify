@@ -1,8 +1,10 @@
+const fs = require('fs');
+setInterval(() => fs.writeFileSync('C:/postify/alive.txt', new Date().toISOString()), 60 * 1000); // עדכון כל דקה
+
 const { sendErrorMail, sendMail } = require("./mailer");
 
 (async () => {
   try {
-    const fs = require("fs");
     const path = require("path");
     const { spawn, exec } = require("child_process");
     const logToSheet = require("./log-to-sheets");

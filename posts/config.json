@@ -5,9 +5,9 @@
   "stateFile": "state.json",
   "currentGroupFile": "current-group.txt",
   "reportsDir": "C:/postify/reports",
-  "minDelaySec": 600,
-  "maxDelaySec": 960,
-  "initialDelayMaxSec": 900,
+  "minDelaySec": 60,
+  "maxDelaySec": 600,
+  "initialDelayMaxSec": 600,
   "shutdownHour": 1,
   "spreadsheetId": "1o8AOOy6LBr6yBwb1tDhXLriOFkqle0hV2VH4V1Ykor0",
   "email": {

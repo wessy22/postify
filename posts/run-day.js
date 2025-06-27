@@ -1,6 +1,4 @@
 const fs = require('fs');
-setInterval(() => fs.writeFileSync('C:/postify/alive.txt', new Date().toISOString()), 60 * 1000); // עדכון כל דקה
-
 const { sendErrorMail, sendMail } = require("./mailer");
 
 (async () => {
@@ -97,6 +95,17 @@ const { sendErrorMail, sendMail } = require("./mailer");
       console.log();
     }
 
+    function updateHeartbeat({ group, postFile, status, index }) {
+      const info = {
+        datetime: new Date().toISOString(),
+        lastGroup: group,
+        postFile,
+        status,   // למשל: 'before', 'after', 'error', 'timeout', 'success', וכו
+        groupIndex: index
+      };
+      fs.writeFileSync('C:/postify/alive.txt', JSON.stringify(info, null, 2));
+    }
+
     async function runPostFromIndex(index, groups, postFile, results, retryCount = 0) {
       if (index >= groups.length) {
         log("✅ כל הקבוצות פורסמו!");
@@ -151,12 +160,14 @@ const { sendErrorMail, sendMail } = require("./mailer");
             }, 60000);
           });
         }, 4 * 60000);
+        updateHeartbeat({ group: "all-finished", postFile, status: 'finished', index });
         return;
       }
 
       if (shouldStopByHour()) {
         log("🌙 עצירה — השעה מאוחרת. ממשיך מחר.");
         await logToSheet("Day stopped", "Stopped", "", "השעה מאוחרת, ממשיך מחר");
+        updateHeartbeat({ group: "stopped-by-hour", postFile, status: 'stopped', index });
         return;
       }
 
@@ -164,36 +175,44 @@ const { sendErrorMail, sendMail } = require("./mailer");
       log(`📢 posting to group(${index + 1}/${groups.length}): ${groupUrl}`);
       await logToSheet("Publishing to group", "Started", groupUrl, `Group ${index + 1}/${groups.length}`);
 
+      // עדכון heartbeat לפני שליחת פוסט
+      updateHeartbeat({ group: groupUrl, postFile, status: 'before', index });
+
       // שמור גם את התאריך הנוכחי!
       const todayIso = new Date().toISOString().slice(0, 10);
       fs.writeFileSync(STATE_POST_FILE, JSON.stringify({ file: postFile, index, date: todayIso }), "utf-8");
 
       const child = spawn("node", ["post.js", groupUrl, postFile], { stdio: "inherit" });
 
-// קובע timeout לקבוצה (למשל 13 דקות)
-const TIMEOUT = 13 * 60 * 1000;
-let timeoutId = setTimeout(() => {
-  log(`⏰ Timeout! post.js לקח יותר מ־13 דקות. סוגר תהליך וממשיך...`);
-  child.kill("SIGKILL"); // הורג בכח את התהליך
-  // שליחת מייל/לוג
-  sendErrorMail("⏰ Timeout - קבוצה נתקעה", `הקבוצה ${groupUrl} נתקעה ליותר מ־13 דקות ונעצרה אוטומטית.`);
-}, TIMEOUT);
+      // קובע timeout לקבוצה (למשל 13 דקות)
+      const TIMEOUT = 13 * 60 * 1000;
+      let timeoutId = setTimeout(() => {
+        log(`⏰ Timeout! post.js לקח יותר מ־13 דקות. סוגר תהליך וממשיך...`);
+        child.kill("SIGKILL");
+        sendErrorMail("⏰ Timeout - קבוצה נתקעה", `הקבוצה ${groupUrl} נתקעה ליותר מ־13 דקות ונעצרה אוטומטית.`);
+        // עדכון heartbeat ב־timeout
+        updateHeartbeat({ group: groupUrl, postFile, status: 'timeout', index });
+      }, TIMEOUT);
 
-child.on("error", async (error) => {
-  clearTimeout(timeoutId);
-  log(`❌ שגיאה בהרצת post.js: ${error.message}`);
-  await sendErrorMail("❌ שגיאה בהרצת post.js", `שגיאה בפרסום לקבוצה ${groupUrl}: ${error.message}`);
-  if (retryCount < 1) {
-    log("🔁 מנסה שוב לפרסם לקבוצה...");
-    setTimeout(() => runPostFromIndex(index, groups, postFile, results, retryCount + 1), 10000); // נסה שוב אחרי 10 שניות
-  } else {
-    log("⏭️ מדלג לקבוצה הבאה...");
-    runPostFromIndex(index + 1, groups, postFile, results);
-  }
-});
+      child.on("error", async (error) => {
+        clearTimeout(timeoutId);
+        log(`❌ שגיאה בהרצת post.js: ${error.message}`);
+        await sendErrorMail("❌ שגיאה בהרצת post.js", `שגיאה בפרסום לקבוצה ${groupUrl}: ${error.message}`);
 
-child.on("exit", async (code) => {
-  clearTimeout(timeoutId); // תמיד ננקה את ה־timeout
+        // עדכון heartbeat בשגיאה
+        updateHeartbeat({ group: groupUrl, postFile, status: 'error', index });
+
+        if (retryCount < 1) {
+          log("🔁 מנסה שוב לפרסם לקבוצה...");
+          setTimeout(() => runPostFromIndex(index, groups, postFile, results, retryCount + 1), 10000);
+        } else {
+          log("⏭️ מדלג לקבוצה הבאה...");
+          runPostFromIndex(index + 1, groups, postFile, results);
+        }
+      });
+
+      child.on("exit", async (code) => {
+        clearTimeout(timeoutId);
         const now = new Date();
         const time = now.toLocaleTimeString("he-IL", { hour: '2-digit', minute: '2-digit' });
         const statusText = code === 0 ? "✅" : "❌";
@@ -215,6 +234,14 @@ child.on("exit", async (code) => {
           log("⚠️ שגיאה ברישום לגוגל שיט: " + e.message);
           await sendErrorMail("⚠️ שגיאה ברישום לגוגל שיט", `לא ניתן לרשום את התוצאה לגוגל שיט: ${e.message}`);
         }
+
+        // עדכון heartbeat אחרי סיום קבוצה (הצלחה/כישלון)
+        updateHeartbeat({
+          group: groupUrl,
+          postFile,
+          status: code === 0 ? 'success' : 'after',
+          index
+        });
 
         function explainExitCode(code) {
           if (code === 0) return "בוצע בהצלחה.";
@@ -249,6 +276,9 @@ child.on("exit", async (code) => {
         const seconds = delaySec % 60;
         log(`⏱ Waiting ${minutes} minutes and ${seconds} seconds before the next group...`);
         await countdown(delaySec);
+
+        // עדכון heartbeat – אחרי כל קבוצה (רק אם באמת התקדמנו)
+        fs.writeFileSync('C:/postify/alive.txt', new Date().toISOString());
 
         runPostFromIndex(index + 1, groups, postFile, results);
       });
@@ -288,7 +318,8 @@ child.on("exit", async (code) => {
       // --- לוגיקה חדשה: מעבר לפי קבצים קיימים בלבד ---
       let allFiles;
       let postsFolderTries = 0;
-      while (postsFolderTries < 2) {
+      const MAX_POSTS_FOLDER_TRIES = 5; // נסה עד 5 פעמים (כלומר ~40 שניות)
+      while (postsFolderTries < MAX_POSTS_FOLDER_TRIES) {
         try {
           allFiles = fs.readdirSync(POSTS_FOLDER);
           break;
@@ -296,11 +327,13 @@ child.on("exit", async (code) => {
           postsFolderTries++;
           log("❌ שגיאה בקריאת תיקיית הפוסטים: " + e.message);
           await sendErrorMail("❌ שגיאה בקריאת תיקיית הפוסטים", e.message);
-          if (postsFolderTries < 2) {
+          if (postsFolderTries < MAX_POSTS_FOLDER_TRIES) {
             log("🔁 מנסה שוב לקרוא את תיקיית הפוסטים בעוד 10 שניות...");
             await new Promise(r => setTimeout(r, 10000));
           } else {
-            log("⏭️ מדלג ליום הבא (או סיום)...");
+            log("⏭️ חורג ממספר ניסיונות – מסיים את היום.");
+            updateHeartbeat({ group: "no-posts-folder", postFile: null, status: 'fatal-error', index: -1 });
+            await sendErrorMail("❌ סיום אוטומטי – תיקיית פוסטים לא קיימת", "המערכת ניסתה מספר פעמים ולא הצליחה לגשת לתיקיית הפוסטים.");
             return;
           }
         }
@@ -317,6 +350,7 @@ child.on("exit", async (code) => {
         log("❌ לא נמצאו קבצי postX.json בתיקייה.");
         await sendErrorMail("❌ לא נמצאו פוסטים", "לא נמצא אף פוסט מסוג postX.json בתיקייה.");
         log("⏭️ מדלג ליום הבא (או סיום)...");
+        updateHeartbeat({ group: "no-posts", postFile: null, status: 'error', index: -1 });
         return;
       }
 

@@ -1,4 +1,4 @@
 @echo off
 cd /d C:\postify\posts
-node check-if-runday-run.js
+node monitor-postify.js
 timeout /t 10 

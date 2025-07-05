@@ -149,6 +149,22 @@ const { sendErrorMail, sendMail } = require("./mailer");
                 }
 
                 setTimeout(() => {
+                  // --- הרצת data-from-groups.js לפני כיבוי ---
+                  log("🔄 מריץ data-from-groups.js לפני כיבוי השרת...");
+                  try {
+                    const { spawnSync } = require('child_process');
+                    const result = spawnSync('node', [
+                      'C:/postify/posts/data-from-groups.js'
+                    ], { stdio: 'inherit' });
+                    if (result.status === 0) {
+                      log('✅ data-from-groups.js הסתיים בהצלחה.');
+                    } else {
+                      log('❌ data-from-groups.js הסתיים עם שגיאה (קוד: ' + result.status + ')');
+                    }
+                  } catch (e) {
+                    log('❌ שגיאה בהרצת data-from-groups.js: ' + e.message);
+                  }
+                  // --- כיבוי ---
                   log("💤 כיבוי השרת עכשיו...");
                   exec("shutdown /s /f /t 0", (shutdownError) => {
                     if (shutdownError) {

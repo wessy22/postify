@@ -181,23 +181,79 @@ async function scrollToBottom(page) {
     fs.writeFileSync(instanceGroupsPath, JSON.stringify(groups, null, 2));
     console.log(`📁 נשמר קובץ ${instanceGroupsPath}`);
 
-    try {
-      const fetch = require('node-fetch');
-      const response = await fetch('https://postify.co.il/wp-content/postify-api/save-groups.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ instance: instanceName, groups })
-      });
-      const res = await response.json();
-      console.log("✅ Result from server:", res);
-    } catch (e) {
-      console.warn('⚠️ שגיאה בשליחת הקבוצות לשרת:', e);
+    // --- בדיקת תקינות קובץ JSON ---
+    function isGroupsFileEmpty(filePath) {
+      try {
+        const data = fs.readFileSync(filePath, 'utf8');
+        const arr = JSON.parse(data);
+        return !Array.isArray(arr) || arr.length === 0;
+      } catch (e) {
+        return true;
+      }
     }
 
+    let rerun = false;
+    if (isGroupsFileEmpty(instanceGroupsPath)) {
+      if (!process.env.GROUPS_RERUN) {
+        console.warn('⚠️ קובץ הקבוצות ריק – מריץ שוב את הסקריפט');
+        // הרצה חוזרת עם משתנה סביבה כדי למנוע לולאה אינסופית
+        const { spawnSync } = require('child_process');
+        const result = spawnSync(process.argv[0], process.argv.slice(1), {
+          env: { ...process.env, GROUPS_RERUN: '1' },
+          stdio: 'inherit'
+        });
+        process.exit(result.status);
+      } else {
+        // ניסיון שני נכשל – שלח מייל שגיאה
+        try {
+          const fetch = require('node-fetch');
+          await fetch('https://postify.co.il/wp-content/postify-api/send-error-mail.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              subject: 'שגיאה בסקריפט סריקת קבוצות',
+              message: `הקובץ groups-${instanceName}.json ריק גם לאחר ניסיון שני.\n\nזמן: ${new Date().toISOString()}\nשרת: ${os.hostname()}\nנתיב: ${instanceGroupsPath}`
+            })
+          });
+          console.error('❌ קובץ הקבוצות ריק פעמיים – נשלחה התראה למנהל');
+        } catch (e) {
+          console.error('❌ קובץ הקבוצות ריק פעמיים – שגיאה בשליחת מייל:', e);
+        }
+        process.exit(2);
+      }
+    }
+
+    // --- סיום תקין ---
+    console.log("✅ הסקריפט הסתיים בהצלחה");
     await browser.close();
   } catch (err) {
     console.error('שגיאה קריטית:', err);
     saveGroupsOnExit(groupsRawToSave, groupsToSave);
-    process.exit(1);
+    if (!process.env.GROUPS_RERUN) {
+      console.warn('⚠️ שגיאה קריטית – מריץ שוב את הסקריפט');
+      const { spawnSync } = require('child_process');
+      const result = spawnSync(process.argv[0], process.argv.slice(1), {
+        env: { ...process.env, GROUPS_RERUN: '1' },
+        stdio: 'inherit'
+      });
+      process.exit(result.status);
+    } else {
+      // ניסיון שני נכשל – שלח מייל שגיאה
+      try {
+        const fetch = require('node-fetch');
+        await fetch('https://postify.co.il/wp-content/postify-api/send-error-mail.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            subject: 'שגיאה קריטית בסקריפט סריקת קבוצות',
+            message: `שגיאה: ${err && err.stack ? err.stack : err}\n\nזמן: ${new Date().toISOString()}\nשרת: ${os.hostname()}`
+          })
+        });
+        console.error('❌ שגיאה קריטית פעמיים – נשלחה התראה למנהל');
+      } catch (e) {
+        console.error('❌ שגיאה קריטית פעמיים – שגיאה בשליחת מייל:', e);
+      }
+      process.exit(3);
+    }
   }
 })();

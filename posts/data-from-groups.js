@@ -1,6 +1,7 @@
 const puppeteer = require("puppeteer-core");
 const os = require("os");
 const config = require("./config.json");
+const fetch = require("node-fetch");
 const fs = require("fs");
 const path = require("path");
 
@@ -14,28 +15,41 @@ function cleanMembers(groups) {
       if (match) {
         g.members = match[1].trim();
       } else {
-        g.members = g.members.replace(/חברים/g, '').replace(/\s+/g, ' ').trim();
+        g.members = g.members.replace(/חברים/g, '').replace(/members/gi, '').replace(/\s+/g, ' ').trim();
       }
     }
   }
 }
-function saveGroupsOnExit(groupsRaw, groupsClean) {
+function saveGroupsOnExit(groupsRaw, groupsClean, instanceName = 'postify') {
   if (groupsRaw && groupsRaw.length > 0) {
     fs.writeFileSync('groups-details-raw.json', JSON.stringify(groupsRaw, null, 2));
     const cleanCopy = JSON.parse(JSON.stringify(groupsRaw));
     cleanMembers(cleanCopy);
-    fs.writeFileSync('groups-details.json', JSON.stringify(cleanCopy, null, 2));
-    console.log('📁 נשמרו groups-details-raw.json ו־groups-details.json (on exit/error)');
+    const instanceGroupsPath = `groups-${instanceName}.json`;
+    fs.writeFileSync(instanceGroupsPath, JSON.stringify(cleanCopy, null, 2));
+    // שמירה נוספת בשם groups-postify.json - העתק מדויק
+    fs.copyFileSync(instanceGroupsPath, 'groups-postify.json');
+    console.log(`📁 נשמרו groups-details-raw.json ו־${instanceGroupsPath} (on exit/error)`);
   }
 }
 process.on('uncaughtException', err => {
   console.error('שגיאה לא מטופלת:', err);
-  saveGroupsOnExit(groupsRawToSave, groupsToSave);
+  try {
+    const instanceName = fs.readFileSync(path.join(__dirname, 'instance-name.txt'), 'utf8').trim();
+    saveGroupsOnExit(groupsRawToSave, groupsToSave, instanceName);
+  } catch (e) {
+    saveGroupsOnExit(groupsRawToSave, groupsToSave, 'postify');
+  }
   process.exit(1);
 });
 process.on('SIGINT', () => {
   console.log('הופסק ע"י המשתמש (Ctrl+C)');
-  saveGroupsOnExit(groupsRawToSave, groupsToSave);
+  try {
+    const instanceName = fs.readFileSync(path.join(__dirname, 'instance-name.txt'), 'utf8').trim();
+    saveGroupsOnExit(groupsRawToSave, groupsToSave, instanceName);
+  } catch (e) {
+    saveGroupsOnExit(groupsRawToSave, groupsToSave, 'postify');
+  }
   process.exit(0);
 });
 
@@ -104,7 +118,7 @@ async function scrollToBottom(page) {
       return links.map(link => ({
         name: link.innerText.trim(),
         url: link.href
-      })).filter(g => g.name && g.url && g.name !== "הצגת הקבוצה");
+      })).filter(g => g.name && g.url && g.name !== "הצגת הקבוצה" && g.name !== "View Group");
     });
 
     console.log(`🔍 נמצאו ${groupLinks.length} קבוצות אחרי טעינה מלאה`);
@@ -135,6 +149,13 @@ async function scrollToBottom(page) {
             if (!span) {
               span = allSpans.find(s => s.innerText && /חברים/.test(s.innerText));
             }
+            // אם לא נמצא בעברית, חפש באנגלית
+            if (!span) {
+              span = allSpans.find(s => s.innerText && /members in group/i.test(s.innerText));
+            }
+            if (!span) {
+              span = allSpans.find(s => s.innerText && /members/i.test(s.innerText));
+            }
             if (span) {
               members = span.innerText.trim();
             }
@@ -151,7 +172,7 @@ async function scrollToBottom(page) {
         }
         
         // הוסף לרשימה רק אם יש נתונים
-        if ((group.members || group.image) && group.name !== "הצגת הקבוצה") {
+        if ((group.members || group.image) && group.name !== "הצגת הקבוצה" && group.name !== "View Group") {
           allGroups.push(group);
           console.log(`✅ ${group.name} | ${group.members}`);
         }
@@ -161,27 +182,43 @@ async function scrollToBottom(page) {
         fs.writeFileSync('groups-details-raw.json', JSON.stringify(groupsRawToSave, null, 2));
         const cleanCopy = JSON.parse(JSON.stringify(groupsRawToSave));
         cleanMembers(cleanCopy);
-        fs.writeFileSync('groups-details.json', JSON.stringify(cleanCopy, null, 2));
+        const instanceGroupsPath = `groups-${instanceName}.json`;
+        fs.writeFileSync(instanceGroupsPath, JSON.stringify(cleanCopy, null, 2));
+        // שמירה נוספת בשם groups-postify.json - העתק מדויק
+        fs.copyFileSync(instanceGroupsPath, 'groups-postify.json');
       } catch (e) {
         console.warn(`⚠️ שגיאה כללית בסריקת קבוצה: ${group.name}`);
       }
     }
 
     // שמור רק קבוצות עם נתונים (מהאזור הראשי)
-    const groups = allGroups.filter(g => (g.members || g.image) && g.name !== "הצגת הקבוצה");
+    const groups = allGroups.filter(g => (g.members || g.image) && g.name !== "הצגת הקבוצה" && g.name !== "View Group");
     groupsRawToSave = groups;
     fs.writeFileSync('groups-details-raw.json', JSON.stringify(groupsRawToSave, null, 2));
     const cleanCopy = JSON.parse(JSON.stringify(groupsRawToSave));
     cleanMembers(cleanCopy);
-    fs.writeFileSync(`groups-details.json`, JSON.stringify(cleanCopy, null, 2));
-    console.log("📁 נשמרו groups-details-raw.json ו־groups-details.json");
+    const finalInstanceGroupsPath = `groups-${instanceName}.json`;
+    fs.writeFileSync(finalInstanceGroupsPath, JSON.stringify(cleanCopy, null, 2));
+    // שמירה נוספת בשם groups-postify.json - העתק מדויק
+    fs.copyFileSync(finalInstanceGroupsPath, 'groups-postify.json');
+    console.log(`📁 נשמרו groups-details-raw.json ו־${finalInstanceGroupsPath}`);
 
-    // --- שמירה בפורמט מלא ושליחה לשרת ---
-    const instanceGroupsPath = path.join(__dirname, `groups-${instanceName}.json`);
-    fs.writeFileSync(instanceGroupsPath, JSON.stringify(groups, null, 2));
-    console.log(`📁 נשמר קובץ ${instanceGroupsPath}`);
+    // שליחת הנתונים לאתר
+    try {
+      const response = await fetch('https://postify.co.il/wp-content/postify-api/save-groups.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instance: instanceName, groups: cleanCopy })
+      });
+      const res = await response.json();
+      console.log("✅ Result from server:", res);
+    } catch (uploadError) {
+      console.error("❌ שגיאה בשליחת נתונים לאתר:", uploadError);
+    }
 
     // --- בדיקת תקינות קובץ JSON ---
+    const instanceGroupsPath = path.join(__dirname, `groups-${instanceName}.json`);
+    
     function isGroupsFileEmpty(filePath) {
       try {
         const data = fs.readFileSync(filePath, 'utf8');

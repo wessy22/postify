@@ -700,23 +700,13 @@ function updateHeartbeat({ group, postFile, status, index }) {
                   log("✅ מייל סגירה נשלח בהצלחה.");
                 }
                 setTimeout(() => {
-                  log("🔄 מריץ data-from-groups.js לפני כיבוי השרת...");
-                  exec("node C:\\postify\\posts\\data-from-groups.js", (groupsError) => {
-                    if (groupsError) {
-                      log("❌ שגיאה בהרצת data-from-groups.js: " + groupsError.message);
-                    } else {
-                      log("✅ data-from-groups.js הסתיים בהצלחה.");
+                  log(" כיבוי השרת עכשיו...");
+                  exec("shutdown /s /f /t 0", (shutdownError) => {
+                    if (shutdownError) {
+                      log("❌ שגיאה בכיבוי: " + shutdownError.message);
                     }
-                    setTimeout(() => {
-                      log("💤 כיבוי השרת עכשיו...");
-                      exec("shutdown /s /f /t 0", (shutdownError) => {
-                        if (shutdownError) {
-                          log("❌ שגיאה בכיבוי: " + shutdownError.message);
-                        }
-                      });
-                    }, 10000); // 10 שניות המתנה לפני כיבוי
                   });
-                }, 30000);
+                }, 10000); // 10 שניות המתנה לפני כיבוי
               });
             }, 60000);
           });

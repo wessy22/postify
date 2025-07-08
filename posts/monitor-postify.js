@@ -8,7 +8,7 @@ const serverName = fs.existsSync('instance-name.txt')
   : 'Unknown';
 
 const alivePath = 'C:/postify/alive.txt';
-const maxMinutes = 15;
+const maxMinutes = 30;
 
 let isHeartbeatFresh = false;
 let heartbeatStatus = '';

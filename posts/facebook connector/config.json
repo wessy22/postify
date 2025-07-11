@@ -1,0 +1,30 @@
+{
+  "chrome": {
+    "executablePath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "userDataDir": "C:\\postify\\chrome-profiles\\postify",
+    "defaultArgs": [
+      "--no-sandbox",
+      "--disable-setuid-sandbox", 
+      "--disable-dev-shm-usage",
+      "--disable-web-security",
+      "--allow-running-insecure-content",
+      "--disable-features=VizDisplayCompositor",
+      "--remote-debugging-port=9222",
+      "--start-maximized",
+      "--disable-blink-features=AutomationControlled",
+      "--exclude-switches=enable-automation",
+      "--disable-extensions-except",
+      "--disable-plugins-except",
+      "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ]
+  },
+  "server": {
+    "port": 3000,
+    "screenshotInterval": 1000,
+    "allowedOrigins": "*"
+  },
+  "facebook": {
+    "defaultUrl": "https://www.facebook.com",
+    "loginTimeout": 30000
+  }
+}

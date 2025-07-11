@@ -327,10 +327,12 @@ function updateHeartbeat({ group, postFile, status, index }) {
     const config = require("./config.json");
 
     let instanceName;
+    let POSTS_FOLDER;
     let instanceTries = 0;
     while (instanceTries < 2) {
       try {
         instanceName = fs.readFileSync("C:\\postify\\posts\\instance-name.txt", "utf-8").trim();
+        POSTS_FOLDER = `C:\\postify\\user data\\${instanceName}\\posts`;
         break;
       } catch (e) {
         instanceTries++;
@@ -345,7 +347,6 @@ function updateHeartbeat({ group, postFile, status, index }) {
         }
       }
     }
-    const POSTS_FOLDER = `C:\\postify\\user data\\${instanceName}\\posts`;
     const LOG_FILE = path.join(__dirname, config.logFile);
     const STATE_POST_FILE = path.join(__dirname, "state-post.json");
     const CURRENT_GROUP_NAME_FILE = path.join(__dirname, config.currentGroupFile);
@@ -816,9 +817,9 @@ function updateHeartbeat({ group, postFile, status, index }) {
     // טעינת קבצי פוסטים עם retry logic
     let allFiles;
     let postsFolderTries = 0;
-    const MAX_POSTS_FOLDER_TRIES = 5;
     let lastPostsFolderError = null;
-    while (postsFolderTries < MAX_POSTS_FOLDER_TRIES) {
+    let triedCreateInstance = false;
+    while (postsFolderTries < 2) {
       try {
         allFiles = fs.readdirSync(POSTS_FOLDER);
         break;
@@ -827,19 +828,55 @@ function updateHeartbeat({ group, postFile, status, index }) {
         lastPostsFolderError = e;
         log("❌ שגיאה בקריאת תיקיית הפוסטים: " + e.message);
         await sendErrorMail("❌ שגיאה בקריאת תיקיית הפוסטים", e.message);
-        if (postsFolderTries < MAX_POSTS_FOLDER_TRIES) {
+        if (postsFolderTries === 2 && !triedCreateInstance) {
+          triedCreateInstance = true;
+          log("🔁 מנסה להריץ create-instance name.bat ולחכות 20 שניות...");
+          const { execSync } = require("child_process");
+          try {
+            execSync('start /b "" "C:\\postify\\posts\\create-instance name.bat"', { stdio: "ignore" });
+          } catch (err) {
+            log("❌ שגיאה בהרצת create-instance name.bat: " + err.message);
+          }
+          await new Promise(r => setTimeout(r, 20000));
+          // ננסה שוב לקרוא את שם ה-instance
+          try {
+            instanceName = fs.readFileSync("C:\\postify\\posts\\instance-name.txt", "utf-8").trim();
+            // עדכון נתיב תיקיית הפוסטים
+            POSTS_FOLDER = `C:\\postify\\user data\\${instanceName}\\posts`;
+          } catch (err) {
+            log("❌ עדיין לא מצליח לקרוא את instance-name.txt: " + err.message);
+          }
+          // ננסה שוב לקרוא את תיקיית הפוסטים
+          try {
+            allFiles = fs.readdirSync(POSTS_FOLDER);
+            break;
+          } catch (err) {
+            lastPostsFolderError = err;
+            // נשלח הודעת שגיאה עם ה-IP
+            let ip = "לא ידוע";
+            try {
+              const { networkInterfaces } = require("os");
+              const nets = networkInterfaces();
+              for (const name of Object.keys(nets)) {
+                for (const net of nets[name]) {
+                  if (net.family === 'IPv4' && !net.internal) {
+                    ip = net.address;
+                    break;
+                  }
+                }
+              }
+            } catch (ipErr) {}
+            await sendErrorMail(
+              "❌ סיום אוטומטי – תיקיית פוסטים לא קיימת",
+              `המערכת ניסתה פעמיים ולא הצליחה לגשת לתיקיית הפוסטים.\n\nשגיאה אחרונה:\n${lastPostsFolderError ? lastPostsFolderError.message : ""}\n\nIP: ${ip}`
+            );
+            log("💤 הסקריפט ייסגר בעוד 10 שניות...");
+            await new Promise(r => setTimeout(r, 10000));
+            process.exit(1);
+          }
+        } else if (postsFolderTries < 2) {
           log("🔁 מנסה שוב לקרוא את תיקיית הפוסטים בעוד 10 שניות...");
           await new Promise(r => setTimeout(r, 10000));
-        } else {
-          log("⏭️ חורג ממספר ניסיונות – מסיים את היום.");
-          updateHeartbeat({ group: "no-posts-folder", postFile: null, status: 'fatal-error', index: -1 });
-          await sendErrorMail(
-            "❌ סיום אוטומטי – תיקיית פוסטים לא קיימת",
-            "המערכת ניסתה מספר פעמים ולא הצליחה לגשת לתיקיית הפוסטים.\n\nשגיאה אחרונה:\n" + (lastPostsFolderError ? lastPostsFolderError.message : "")
-          );
-          log("💤 הסקריפט ייסגר בעוד 10 שניות...");
-          await new Promise(r => setTimeout(r, 10000));
-          process.exit(1);
         }
       }
     }

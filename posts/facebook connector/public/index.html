@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>מערכת דפדפן מרוחק - Facebook Login</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
+        .container { max-width: 1400px; margin: 0 auto; background: white; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); overflow: hidden; }
+        .header { background: #4267B2; color: white; padding: 20px; text-align: center; }
+        .header h1 { margin-bottom: 10px; }
+        .header p { opacity: 0.9; font-size: 14px; }
+        .controls { padding: 20px; background: #f8f9fa; display: flex; gap: 15px; flex-wrap: wrap; justify-content: center; align-items: center; }
+        .btn { padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; transition: all 0.3s ease; }
+        .btn-primary { background: #28a745; color: white; }
+        .btn-danger { background: #dc3545; color: white; }
+        .btn-info { background: #17a2b8; color: white; }
+        .btn:disabled { background: #6c757d; cursor: not-allowed; }
+        .status { padding: 15px; margin: 10px 20px; border-radius: 8px; text-align: center; font-weight: bold; }
+        .status.success { background: #d4edda; color: #155724; }
+        .status.error { background: #f8d7da; color: #721c24; }
+        .status.info { background: #d1ecf1; color: #0c5460; }
+        .browser-screen { flex: 1; background: #f0f0f0; border: 2px solid #ddd; cursor: crosshair; position: relative; min-height: 600px; outline: none; }
+        .browser-screen img { width: 100%; height: auto; display: block; }
+        .loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #666; text-align: center; }
+        .live-indicator { position: absolute; top: 10px; left: 10px; background: #28a745; color: white; padding: 5px 10px; border-radius: 15px; font-size: 12px; font-weight: bold; }
+        .live-indicator.loading { background: #ffc107; color: #000; }
+        .spinner { border: 3px solid #f3f3f3; border-top: 3px solid #4267B2; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 0 auto 10px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🌐 מערכת דפדפן מרוחק</h1>
+            <p>מאפשר ללקוחות להתחבר לפייסבוק ללא חשיפת פרטי כניסה</p>
+        </div>
+        
+        <div class="controls">
+            <button class="btn btn-primary" onclick="startBrowser()" id="startBtn">🚀 פתח דפדפן</button>
+            <button class="btn btn-danger" onclick="closeBrowser()" id="stopBtn" disabled>⏹️ סגור דפדפן</button>
+            <button class="btn btn-info" onclick="goToFacebook()">📘 עבור לפייסבוק</button>
+        </div>
+        
+        <div id="status" class="status" style="display:none;"></div>
+        
+        <div class="browser-screen" id="browserScreen" onclick="handleClick(event)" onkeydown="handleKeyDown(event)" tabindex="0">
+            <div class="live-indicator" id="liveIndicator" style="display:none;">🔴 LIVE</div>
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>טוען דפדפן מרוחק...</p>
+                <p style="font-size: 12px; margin-top: 10px;">זה יכול לקחת כמה שניות</p>
+            </div>
+            <img id="screenshot" style="display:none;" alt="Browser Screenshot">
+        </div>
+    </div>
+
+    <script>
+        let socket, currentSessionId = '', browserRunning = false;
+
+        function initSocket() {
+            socket = io();
+            
+            socket.on('connect', () => {
+                console.log('Connected to server');
+                showStatus('מחובר לשרת', 'success');
+            });
+            
+            socket.on('disconnect', () => {
+                console.log('Disconnected from server');
+                showStatus('נותק מהשרת', 'error');
+            });
+            
+            socket.on('screenshot', (base64Image) => {
+                const img = document.getElementById('screenshot');
+                const loading = document.getElementById('loading');
+                const liveIndicator = document.getElementById('liveIndicator');
+                
+                // עדכון תמונה עם אפקט החלפה חלק
+                img.onload = () => {
+                    img.style.display = 'block';
+                    loading.style.display = 'none';
+                    liveIndicator.style.display = 'block';
+                    liveIndicator.textContent = '🟢 LIVE';
+                    liveIndicator.className = 'live-indicator';
+                };
+                
+                img.src = 'data:image/png;base64,' + base64Image;
+            });
+            
+            socket.on('page-loading', () => {
+                const liveIndicator = document.getElementById('liveIndicator');
+                liveIndicator.textContent = '🟡 טוען...';
+                liveIndicator.className = 'live-indicator loading';
+                showStatus('הדף נטען...', 'info');
+            });
+            
+            socket.on('page-loaded', () => {
+                const liveIndicator = document.getElementById('liveIndicator');
+                liveIndicator.textContent = '🟢 LIVE';
+                liveIndicator.className = 'live-indicator';
+                showStatus('הדף נטען בהצלחה', 'success');
+            });
+        }
+
+        function showStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+            statusDiv.style.display = 'block';
+            setTimeout(() => statusDiv.style.display = 'none', 5000);
+        }
+
+        async function startBrowser() {
+            currentSessionId = 'default';
+            showStatus('פותח דפדפן מרוחק...', 'info');
+            document.getElementById('startBtn').disabled = true;
+            
+            try {
+                const response = await fetch(`/api/create-browser/${currentSessionId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    showStatus('דפדפן נפתח בהצלחה!', 'success');
+                    browserRunning = true;
+                    document.getElementById('stopBtn').disabled = false;
+                    socket.emit('join-session', currentSessionId);
+                } else {
+                    showStatus('שגיאה: ' + result.message, 'error');
+                    document.getElementById('startBtn').disabled = false;
+                }
+            } catch (error) {
+                showStatus('שגיאה בחיבור: ' + error.message, 'error');
+                document.getElementById('startBtn').disabled = false;
+            }
+        }
+
+        async function closeBrowser() {
+            if (!currentSessionId) return;
+            try {
+                const response = await fetch(`/api/close-browser/${currentSessionId}`, { method: 'POST' });
+                const result = await response.json();
+                if (result.status === 'success') {
+                    showStatus('דפדפן נסגר בהצלחה', 'success');
+                    browserRunning = false;
+                    document.getElementById('startBtn').disabled = false;
+                    document.getElementById('stopBtn').disabled = true;
+                    document.getElementById('screenshot').style.display = 'none';
+                    document.getElementById('loading').style.display = 'block';
+                }
+            } catch (error) {
+                showStatus('שגיאה: ' + error.message, 'error');
+            }
+        }
+
+        function handleClick(event) {
+            if (!browserRunning) return;
+            const rect = event.currentTarget.getBoundingClientRect();
+            const img = document.getElementById('screenshot');
+            if (img.style.display === 'none') return;
+            
+            const scaleX = img.naturalWidth / img.width;
+            const scaleY = img.naturalHeight / img.height;
+            const x = (event.clientX - rect.left) * scaleX;
+            const y = (event.clientY - rect.top) * scaleY;
+            
+            socket.emit('click', { sessionId: currentSessionId, x, y });
+        }
+
+        function handleKeyDown(event) {
+            if (!browserRunning) return;
+            event.preventDefault();
+            if (event.key.length === 1) {
+                socket.emit('type', { sessionId: currentSessionId, text: event.key });
+            } else {
+                socket.emit('key', { sessionId: currentSessionId, key: event.key });
+            }
+        }
+
+        function goToFacebook() {
+            if (!browserRunning) {
+                showStatus('פתח דפדפן תחילה', 'error');
+                return;
+            }
+            socket.emit('navigate', { sessionId: currentSessionId, url: 'https://www.facebook.com' });
+            showStatus('עובר לפייסבוק...', 'info');
+        }
+
+        window.onload = initSocket;
+    </script>
+</body>
+</html>

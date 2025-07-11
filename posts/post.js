@@ -370,19 +370,28 @@ if (!composerFound) {
     console.log("⏳ Waiting 90 seconds after publish...");
     await new Promise(resolve => setTimeout(resolve, 90000));
     groupName = await page.title();
-console.log("GROUP_NAME_START" + groupName + "GROUP_NAME_END");
+    console.log("GROUP_NAME_START" + groupName + "GROUP_NAME_END");
 
-// ניקוי שם הקבוצה
-groupName = groupName
-  .replace(/^\(\d+\+\)\s*/, '')  // מסיר (20+) או כל מספר אחר בתחילת הכותרת
-  .replace(/\| Facebook$/, '')   // מסיר '| Facebook' מהסוף
-  .replace(" | postify", '')     // מסיר '| postify' אם קיים
-  .trim();
+    // --- חיפוש כתובת הפוסט שפורסם ---
+    let postUrl = null;
+    try {
+      // חפש קישור עם href שמכיל /posts/ או /permalink/
+      const postLinks = await page.$$eval('a[href*="/posts/"], a[href*="/permalink/"]', links => links.map(l => l.href));
+      if (postLinks.length > 0) {
+        postUrl = postLinks[0];
+        console.log("✅ Post URL found:", postUrl);
+        // רישום הצלחה למשיכת כתובת הפוסט
+        await logToSheet('Post Url', 'Success', groupName, postUrl);
+      } else {
+        console.log("⚠️ Post URL not found on page.");
+      }
+    } catch (e) {
+      console.log("⚠️ Error searching for post URL:", e.message);
+    }
+    // רישום ל־logToSheet
+    fs.writeFileSync(config.currentGroupFile, groupName, "utf-8");
+    console.log("✅ Group name saved:", groupName);
 
-fs.writeFileSync(config.currentGroupFile, groupName, "utf-8");
-console.log("✅ Group name saved:", groupName);
-
-    await logToSheet('Post published', 'Success', groupName, 'Text + Images');
     await browser.close();
 
   } catch (err) {

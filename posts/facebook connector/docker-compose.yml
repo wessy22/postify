@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  vnc-browser:
+    build: .
+    ports:
+      - "6080:6080"  # noVNC web interface
+      - "5901:5901"  # VNC port
+    environment:
+      - DISPLAY=:1
+      - VNC_PASSWORD=password123
+      - RESOLUTION=1280x720
+    volumes:
+      - ./browser-data:/home/user/.config/google-chrome
+    restart: unless-stopped

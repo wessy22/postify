@@ -210,14 +210,54 @@ function selectPostsForDay(allPosts, today = new Date()) {
       console.log(`📋 מתעלם מ-${validScheduledPosts.length - 1} פוסטים מתוזמנים נוספים (פוסט אחד בלבד ביום)`);
     }
   } else if (activePosts.length > 0) {
-    // אין פוסט מתוזמן - פרסם פוסט פעיל הכי ישן
+    // אין פוסט מתוזמן - פרסם פוסט פעיל לפי רוטציה מסודרת
+    
+    // קריאת הפוסט האחרון שפורסם מהקובץ
+    let lastPublishedPost = null;
+    try {
+      const LAST_POST_FILE = require("path").join(__dirname, "last-post.txt");
+      if (require("fs").existsSync(LAST_POST_FILE)) {
+        lastPublishedPost = require("fs").readFileSync(LAST_POST_FILE, "utf-8").trim();
+        console.log(`📋 הפוסט האחרון שפורסם: ${lastPublishedPost}`);
+      }
+    } catch (e) {
+      console.log(`⚠️ לא ניתן לקרוא את הפוסט האחרון: ${e.message}`);
+    }
+    
+    // מיון הפוסטים הפעילים לפי שם הקובץ (postX.json) ליצירת סדר קבוע
     const sortedActivePosts = activePosts.sort((a, b) => {
-      const lastA = new Date(a.lastPublished || '2000-01-01');
-      const lastB = new Date(b.lastPublished || '2000-01-01');
-      return lastA - lastB; // הכי ישן קודם
+      const numA = parseInt(a.filename.match(/post(\d+)\.json/)?.[1] || '0');
+      const numB = parseInt(b.filename.match(/post(\d+)\.json/)?.[1] || '0');
+      return numA - numB;
     });
-    selectedPosts.push(sortedActivePosts[0]);
-    console.log(`🔄 נבחר פוסט פעיל (הכי ישן): ${sortedActivePosts[0].filename}`);
+    
+    console.log(`📋 פוסטים פעילים ממוינים: ${sortedActivePosts.map(p => p.filename).join(', ')}`);
+    
+    let selectedPost;
+    if (lastPublishedPost) {
+      // מצא את הפוסט האחרון ברשימה הממוינת
+      const lastIndex = sortedActivePosts.findIndex(p => p.filename === lastPublishedPost);
+      if (lastIndex !== -1) {
+        // בחר את הפוסט הבא ברוטציה (או חזור להתחלה אם הגענו לסוף)
+        const nextIndex = (lastIndex + 1) % sortedActivePosts.length;
+        selectedPost = sortedActivePosts[nextIndex];
+        console.log(`🔄 רוטציה: הפוסט האחרון היה ${lastPublishedPost} (אינדקס ${lastIndex}), הבא הוא ${selectedPost.filename} (אינדקס ${nextIndex})`);
+      } else {
+        // הפוסט האחרון לא נמצא ברשימה הנוכחית (אולי נמחק או הועבר לpaused)
+        selectedPost = sortedActivePosts[0];
+        console.log(`⚠️ הפוסט האחרון ${lastPublishedPost} לא נמצא ברשימה, מתחיל מהראשון: ${selectedPost.filename}`);
+      }
+    } else {
+      // אין פוסט אחרון רשום - מתחיל מהראשון
+      selectedPost = sortedActivePosts[0];
+      console.log(`🆕 אין פוסט אחרון רשום, מתחיל מהראשון: ${selectedPost.filename}`);
+    }
+    
+    selectedPosts.push(selectedPost);
+    console.log(`🔄 נבחר פוסט פעיל (רוטציה): ${selectedPost.filename}`);
+  } else {
+    // אין פוסטים מתוזמנים ואין פוסטים פעילים
+    console.log(`📋 אין פוסטים זמינים להיום - לא מתוזמנים ולא פעילים`);
   }
   
   console.log(`📋 פוסט נבחר סופי: ${selectedPosts.map(p => `${p.filename} (${p.status})`).join(', ')}`);
@@ -615,6 +655,7 @@ function updateHeartbeat({ group, postFile, status, index }) {
         // שמירת הפוסט האחרון שפורסם
         try {
           fs.writeFileSync(LAST_POST_FILE, post.filename);
+          log(`📝 נשמר פוסט אחרון: ${post.filename}`);
         } catch (e) {
           log("⚠️ שגיאה בשמירת הפוסט האחרון: " + e.message);
         }

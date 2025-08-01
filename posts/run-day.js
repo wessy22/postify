@@ -479,6 +479,16 @@ function updateHeartbeat({ group, postFile, status, index }) {
       if (postsToday.length === 0) {
         log("✅ אין פוסטים מתאימים להיום.");
         await logToSheet("Day finished", "Success", "", "אין פוסטים מתאימים להיום");
+        // הוספת כיבוי אוטומטי
+        log("🛑 אין פוסטים להיום - מבצע כיבוי אוטומטי של השרת...");
+        const { exec } = require("child_process");
+        setTimeout(() => {
+          exec("shutdown /s /f /t 0", (shutdownError) => {
+            if (shutdownError) {
+              log("❌ שגיאה בכיבוי: " + shutdownError.message);
+            }
+          });
+        }, 10000); // 10 שניות המתנה לפני כיבוי
         return;
       }
 

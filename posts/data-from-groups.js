@@ -41,21 +41,24 @@ async function saveGroupsOnExit(groupsRaw, groupsClean, instanceName = 'postify'
   if (groupsRaw && groupsRaw.length > 0) {
     try {
       console.log('📝 שומר קבצים מקומיים...');
-      fs.writeFileSync('groups-details-raw.json', JSON.stringify(groupsRaw, null, 2));
+      // שמירה עם תיקון קישורים
+      let rawJson = JSON.stringify(groupsRaw, null, 2).replace(/\\\//g, '/');
+      fs.writeFileSync('groups-details-raw.json', rawJson);
       console.log('✅ נשמר groups-details-raw.json');
-      
+
       const cleanCopy = JSON.parse(JSON.stringify(groupsRaw));
       cleanMembers(cleanCopy);
       const instanceGroupsPath = `groups-${instanceName}.json`;
-      fs.writeFileSync(instanceGroupsPath, JSON.stringify(cleanCopy, null, 2));
+      let cleanJson = JSON.stringify(cleanCopy, null, 2).replace(/\\\//g, '/');
+      fs.writeFileSync(instanceGroupsPath, cleanJson);
       console.log(`✅ נשמר ${instanceGroupsPath}`);
-      
+
       // שמירה נוספת בשם groups-postify.json - העתק מדויק
       fs.copyFileSync(instanceGroupsPath, 'groups-postify.json');
       console.log('✅ נשמר groups-postify.json');
-      
+
       console.log(`📁 נשמרו groups-details-raw.json ו־${instanceGroupsPath} (on exit/error)`);
-      
+
       // שליחת נתונים לשרת גם ביציאה
       console.log('🌐 מנסה לשלוח נתונים לשרת לפני יציאה...');
       try {
@@ -64,12 +67,12 @@ async function saveGroupsOnExit(groupsRaw, groupsClean, instanceName = 'postify'
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ instance: instanceName, groups: cleanCopy })
         });
-        
+
         if (!response.ok) {
           console.error(`❌ שגיאה HTTP: ${response.status} ${response.statusText}`);
           return;
         }
-        
+
         const res = await response.json();
         console.log("✅ נתונים נשלחו בהצלחה לשרת ביציאה:", res);
       } catch (uploadError) {
@@ -289,11 +292,13 @@ async function scrollToBottom(page) {
         // שמירה מיידית לאחר כל קבוצה
         console.log(`💾 שומר נתונים מיידית (${allGroups.length} קבוצות עד כה)...`);
         groupsRawToSave = allGroups;
-        fs.writeFileSync('groups-details-raw.json', JSON.stringify(groupsRawToSave, null, 2));
+        let rawJson = JSON.stringify(groupsRawToSave, null, 2).replace(/\\\//g, '/');
+        fs.writeFileSync('groups-details-raw.json', rawJson);
         const cleanCopy = JSON.parse(JSON.stringify(groupsRawToSave));
         cleanMembers(cleanCopy);
         const instanceGroupsPath = `groups-${instanceName}.json`;
-        fs.writeFileSync(instanceGroupsPath, JSON.stringify(cleanCopy, null, 2));
+        let cleanJson = JSON.stringify(cleanCopy, null, 2).replace(/\\\//g, '/');
+        fs.writeFileSync(instanceGroupsPath, cleanJson);
         // שמירה נוספת בשם groups-postify.json - העתק מדויק
         fs.copyFileSync(instanceGroupsPath, 'groups-postify.json');
         console.log(`✅ שמירה מיידית הושלמה (${allGroups.length} קבוצות)`);
@@ -331,11 +336,13 @@ async function scrollToBottom(page) {
     
     groupsRawToSave = groups;
     console.log('💾 שומר קבצים סופיים...');
-    fs.writeFileSync('groups-details-raw.json', JSON.stringify(groupsRawToSave, null, 2));
+    let rawJson = JSON.stringify(groupsRawToSave, null, 2).replace(/\\\//g, '/');
+    fs.writeFileSync('groups-details-raw.json', rawJson);
     const cleanCopy = JSON.parse(JSON.stringify(groupsRawToSave));
     cleanMembers(cleanCopy);
     const finalInstanceGroupsPath = `groups-${instanceName}.json`;
-    fs.writeFileSync(finalInstanceGroupsPath, JSON.stringify(cleanCopy, null, 2));
+    let cleanJson = JSON.stringify(cleanCopy, null, 2).replace(/\\\//g, '/');
+    fs.writeFileSync(finalInstanceGroupsPath, cleanJson);
     // שמירה נוספת בשם groups-postify.json - העתק מדויק
     fs.copyFileSync(finalInstanceGroupsPath, 'groups-postify.json');
     console.log(`📁 נשמרו groups-details-raw.json ו־${finalInstanceGroupsPath}`);

@@ -51,10 +51,21 @@ const logToSheet = async (...args) => {
 };
 
 const humanType = async (element, text) => {
+  // נקה רווחים מיותרים ושורות ריקות
+  const cleanText = text
+    .replace(/\r\n/g, '\n') // המר CRLF ל-LF
+    .replace(/\n{3,}/g, '\n\n') // הגבל שורות ריקות רצופות ל-2 לכל היותר
+    .replace(/[ \t]+/g, ' ') // הפך רווחים מרובים לרווח יחיד
+    .replace(/[ \t]*\n[ \t]*/g, '\n') // הסר רווחים בתחילת ובסוף שורות
+    .trim(); // הסר רווחים מתחילת וסוף הטקסט
+
+  console.log("🧹 Cleaned text length:", cleanText.length);
+  console.log("🧹 Cleaned text (first 200 chars):", JSON.stringify(cleanText.substring(0, 200)));
+
   let charsTyped = 0;
   const typoFrequency = 150 + Math.floor(Math.random() * 100); // כל 150–250 תווים
 
-  for (const char of text) {
+  for (const char of cleanText) {
     if (charsTyped > 0 && charsTyped % typoFrequency === 0 && /[a-zא-ת]/i.test(char)) {
       const wrongChar = String.fromCharCode(char.charCodeAt(0) + 1);
       await element.type(wrongChar);
@@ -314,6 +325,8 @@ if (!composerFound) {
     }
 
     console.log("📝 Typing post text...");
+    console.log("🔍 Original post text length:", postText.length);
+    console.log("🔍 Original post text (first 200 chars):", JSON.stringify(postText.substring(0, 200)));
     await page.waitForSelector('div[role="dialog"] div[role="textbox"]', { timeout: 40000 });
     const textbox = await page.$('div[role="dialog"] div[role="textbox"]');
     await textbox.click();
@@ -367,8 +380,8 @@ if (!composerFound) {
       }
     }
 
-    console.log("⏳ Waiting 90 seconds after publish...");
-    await new Promise(resolve => setTimeout(resolve, 90000));
+    console.log("⏳ Waiting 40 seconds after publish...");
+    await new Promise(resolve => setTimeout(resolve, 40000));
     groupName = await page.title();
     console.log("GROUP_NAME_START" + groupName + "GROUP_NAME_END");
 

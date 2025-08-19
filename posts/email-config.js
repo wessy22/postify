@@ -1,6 +1,6 @@
 module.exports = {
-  user: "support@postify.co.il",         // כתובת המייל השולחת
-  pass: "mwib fxwi ncwc vwzd",         // סיסמת אפליקציה (לא רגילה!)
+  user: "postify.user@gmail.com",         // כתובת המייל השולחת
+  pass: "tkfa umxa zofy dwwi",         // סיסמת אפליקציה (לא רגילה!)
   to: "yehiad82@gmail.com",               // כתובת היעד שתקבל התראות
-  errorTo: "support@postify.co.il"        // מייל לקבלת שגיאות מערכת
+  errorTo: "postify.user@gmail.com"        // מייל לקבלת שגיאות מערכת
 };

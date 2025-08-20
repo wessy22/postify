@@ -72,7 +72,19 @@ function downloadImage(url, dest) {
           imageUrl = "https://postify.co.il/wp-content/postify-api/" + imageUrl.replace(/^\+|^\/+/, "");
         }
 
-        const imageDest = path.join(postImageDir, `${i + 1}.jpg`);
+        // קבע סיומת מקורית
+        let ext = path.extname(imageUrl).toLowerCase();
+        // רשימת סיומות תמונה נפוצות
+        const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'];
+        let isImage = imageExts.includes(ext);
+        let destName;
+        if (isImage) {
+          destName = `${i + 1}.jpg`;
+        } else {
+          // אם זה וידאו או קובץ אחר, שמור את הסיומת המקורית
+          destName = `${i + 1}${ext}`;
+        }
+        const imageDest = path.join(postImageDir, destName);
         if (!fs.existsSync(imageDest)) {
           console.log(`⬇️ Downloading: ${imageUrl}`);
           await downloadImage(imageUrl, imageDest);

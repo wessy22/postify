@@ -333,6 +333,14 @@ if (!composerFound) {
     await humanType(textbox, postText);
 
     for (const imagePath of postData.images) {
+      // בדוק אם הקובץ הוא תמונה (לפי סיומת)
+      const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'];
+      const ext = path.extname(imagePath).toLowerCase();
+      if (!imageExts.includes(ext)) {
+        console.log(`⏩ מדלג על קובץ לא תמונה: ${imagePath}`);
+        continue;
+      }
+      
       console.log(`📋 Copying ${imagePath} to clipboard...`);
       try {
         execSync(`powershell -ExecutionPolicy Bypass -File \"C:\\postify\\posts\\copy-image.ps1\" -imagePath \"${imagePath}\"`);
@@ -368,6 +376,50 @@ if (!composerFound) {
       const tempFolder = "C:\\temp";
       if (!fs.existsSync(tempFolder)) fs.mkdirSync(tempFolder, { recursive: true });
       await page.screenshot({ path: `C:\\temp\\image-paste-${path.basename(imagePath)}.png` });
+    }
+
+    // הטיפול בקבצי וידאו
+    const videoFiles = postData.images.filter(imagePath => {
+      const videoExts = ['.mp4', '.avi', '.mov', '.mkv', '.wmv', '.webm', '.m4v'];
+      const ext = path.extname(imagePath).toLowerCase();
+      return videoExts.includes(ext);
+    });
+
+    if (videoFiles.length > 0) {
+      for (const videoPath of videoFiles) {
+        try {
+          console.log(`🎬 מעלה וידאו: ${videoPath}`);
+          // חיפוש כפתור העלאת קובץ או איקון מצלמה
+          const uploadSelectors = [
+            'div[role="dialog"] input[type="file"]',
+            'div[role="dialog"] [aria-label*="Photo"]',
+            'div[role="dialog"] [aria-label*="Video"]',
+            'div[role="dialog"] [data-testid="media-sprout"]'
+          ];
+          
+          let fileInput = null;
+          for (const selector of uploadSelectors) {
+            try {
+              fileInput = await page.$(selector);
+              if (fileInput) break;
+            } catch (e) {
+              continue;
+            }
+          }
+          
+          if (fileInput) {
+            await fileInput.uploadFile(videoPath);
+            console.log("✅ וידאו נבחר להעלאה.");
+            // המתן להעלאה
+            await new Promise(resolve => setTimeout(resolve, 15000));
+          } else {
+            console.log("⚠️ לא נמצא כפתור העלאת קובץ");
+          }
+        } catch (error) {
+          console.error(`❌ שגיאה בהעלאת וידאו ${videoPath}: ${error.message}`);
+          await logToSheet('Video upload failed', 'Error', groupUrl, videoPath);
+        }
+      }
     }
 
     console.log("📤 Publishing post...");

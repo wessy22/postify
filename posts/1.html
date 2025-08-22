@@ -237,6 +237,206 @@ let hostname = "";
 let collections = [];
 let allPosts = [];
 
+// פונקציה לחילוץ שם המותג מהקישור המקורי
+function extractBrandFromUrl(url) {
+    try {
+        // נוסף https:// אם אין
+        const fullUrl = url.startsWith('http') ? url : 'https://' + url;
+        const urlObj = new URL(fullUrl);
+        const hostname = urlObj.hostname;
+        
+        // הסר www. אם קיים
+        const domain = hostname.replace(/^www\./, '');
+        
+        // קח את החלק הראשון של הדומיין (לפני הנקודה הראשונה)
+        const brandName = domain.split('.')[0];
+        
+        console.log('🏷️ חילוץ מותג:', url, '→', brandName);
+        return brandName.toLowerCase();
+    } catch (e) {
+        console.warn('❌ שגיאה בחילוץ מותג:', e);
+        return 'link'; // ברירת מחדל
+    }
+}
+
+// פונקציה לקיצור קישורים עם מותג דינאמי מהקישור המקורי
+async function shortenUrl(longUrl) {
+    console.log('🔗 מנסה לקצר קישור:', longUrl);
+    
+    // חלץ את שם המותג מהקישור המקורי
+    const brandName = extractBrandFromUrl(longUrl);
+    
+    // 1. נסה TinyURL עם alias המכיל את שם המותג (הכי טוב למותג)
+    try {
+        console.log('🔄 מנסה TinyURL עם מותג דינאמי:', brandName);
+        const randomId = Math.random().toString(36).substring(2, 6);
+        const alias = `${brandName}-${randomId}`;
+        console.log('🎯 מנסה alias:', alias);
+        
+        const tinyUrl = `https://tinyurl.com/api-create.php?url=${encodeURIComponent(longUrl)}&alias=${alias}`;
+        const response = await fetch(tinyUrl, { timeout: 5000 });
+        
+        if (response.ok) {
+            const shortUrl = await response.text();
+            console.log('📥 תשובה מ-TinyURL עם alias:', shortUrl);
+            if (shortUrl && shortUrl.includes(brandName) && !shortUrl.includes('Error') && !shortUrl.includes('already')) {
+                console.log('✅ קיצור הצליח עם TinyURL + מותג דינאמי:', shortUrl);
+                return shortUrl.trim();
+            } else {
+                console.warn('⚠️ TinyURL alias נכשל או לא זמין:', shortUrl);
+            }
+        } else {
+            console.warn('⚠️ TinyURL alias - תשובה לא תקינה:', response.status);
+        }
+    } catch (e) {
+        console.warn('⚠️ TinyURL עם מותג דינאמי נכשל:', e.message);
+    }
+    
+    // 2. נסה Rebrandly עם slashtag המכיל את שם המותג (אמין יותר)
+    try {
+        console.log('🔄 מנסה Rebrandly עם מותג דינאמי:', brandName);
+        const randomId = Math.random().toString(36).substring(2, 4);
+        const slashtag = `${brandName}${randomId}`;
+        console.log('🎯 מנסה slashtag:', slashtag);
+        
+        const rebrandlyUrl = 'https://api.rebrandly.com/v1/links';
+        const response = await fetch(rebrandlyUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify({
+                "destination": longUrl,
+                "slashtag": slashtag
+            }),
+            timeout: 5000
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            console.log('📥 תשובה מ-Rebrandly:', data);
+            if (data.shortUrl && data.shortUrl.includes(brandName)) {
+                console.log('✅ קיצור הצליח עם Rebrandly + מותג דינאמי:', data.shortUrl);
+                return data.shortUrl;
+            } else {
+                console.warn('⚠️ Rebrandly - לא מכיל מותג או שגיאה:', data);
+            }
+        } else {
+            console.warn('⚠️ Rebrandly - תשובה לא תקינה:', response.status);
+        }
+    } catch (e) {
+        console.warn('⚠️ Rebrandly עם מותג דינאמי נכשל:', e.message);
+    }
+    
+    // 3. נסה is.gd (ללא מותג אבל אמין)
+    try {
+        console.log('🔄 מנסה is.gd עם JSONP ומותג דינאמי...');
+        const isGdUrl = `https://is.gd/create.php?format=json&url=${encodeURIComponent(longUrl)}&callback=handleShortUrl`;
+        
+        // יצירת JSONP request
+        const result = await new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            const callbackName = 'handleShortUrl_' + Date.now();
+            
+            window[callbackName] = function(data) {
+                document.head.removeChild(script);
+                delete window[callbackName];
+                resolve(data);
+            };
+            
+            script.src = isGdUrl.replace('handleShortUrl', callbackName);
+            script.onerror = () => {
+                document.head.removeChild(script);
+                delete window[callbackName];
+                reject(new Error('JSONP failed'));
+            };
+            
+            document.head.appendChild(script);
+            
+            setTimeout(() => {
+                if (window[callbackName]) {
+                    document.head.removeChild(script);
+                    delete window[callbackName];
+                    reject(new Error('JSONP timeout'));
+                }
+            }, 5000);
+        });
+        
+        console.log('📥 תשובה מ-is.gd JSONP:', result);
+        if (result.shorturl && result.shorturl.startsWith('https://is.gd/')) {
+            console.log('✅ קיצור הצליח עם is.gd JSONP (ללא מותג):', result.shorturl);
+            return result.shorturl;
+        }
+    } catch (e) {
+        console.warn('⚠️ is.gd JSONP נכשל:', e.message);
+    }
+    
+    // 4. נסה TinyURL רגיל כגיבוי אחרון (ללא מותג)
+    try {
+        console.log('🔄 מנסה TinyURL רגיל (גיבוי אחרון)...');
+        const tinyUrl = 'https://tinyurl.com/api-create.php?url=' + encodeURIComponent(longUrl);
+        const response = await fetch(tinyUrl, { timeout: 5000 });
+        
+        if (response.ok) {
+            const shortUrl = await response.text();
+            console.log('📥 תשובה מ-TinyURL רגיל:', shortUrl);
+            if (shortUrl && shortUrl.startsWith('https://tinyurl.com/') && !shortUrl.includes('Error') && shortUrl.trim().length > 20) {
+                console.log('✅ קיצור הצליח עם TinyURL רגיל (גיבוי):', shortUrl);
+                return shortUrl.trim();
+            }
+        }
+    } catch (e) {
+        console.warn('⚠️ TinyURL רגיל נכשל:', e.message);
+    }
+    
+    // 4. נסה TinyURL כגיבוי אחרון (עם טיפול טוב יותר בשגיאות)
+    try {
+        console.log('🔄 מנסה TinyURL (גיבוי אחרון)...');
+        const tinyUrl = 'https://tinyurl.com/api-create.php?url=' + encodeURIComponent(longUrl);
+        const response = await fetch(tinyUrl, { timeout: 5000 });
+        
+        if (response.ok) {
+            const shortUrl = await response.text();
+            console.log('📥 תשובה מ-TinyURL:', shortUrl);
+            if (shortUrl && shortUrl.startsWith('https://tinyurl.com/') && !shortUrl.includes('Error') && shortUrl.trim().length > 20) {
+                console.log('✅ קיצור הצליח עם TinyURL (גיבוי):', shortUrl);
+                return shortUrl.trim();
+            }
+        }
+    } catch (e) {
+        console.warn('⚠️ TinyURL נכשל:', e.message);
+    }
+    
+    // אם הכל נכשל, החזר את הקישור המקורי
+    console.log('↩️ מחזיר קישור מקורי (כל השירותים נכשלו):', longUrl);
+    return longUrl;
+}
+
+// פונקציה לסרוק טקסט, למצוא לינקים (כולל www) ולקצר אותם (אסינכרונית)
+async function autoShortenLinks(text) {
+    console.log('🔍 מתחיל לחפש קישורים בטקסט:', text);
+    // תבנית מורחבת: http/https וגם www
+    const pattern = /((https?:\/\/|www\.)[^\s]+)/g;
+    const urls = [...text.matchAll(pattern)].map(m => m[0]);
+    console.log('🎯 נמצאו קישורים:', urls);
+    let shortMap = {};
+    for (const url of urls) {
+        let urlForApi = url;
+        if (url.startsWith('www.')) {
+            urlForApi = 'https://' + url; // שימוש ב-https במקום http
+        }
+        console.log('🔄 מעבד קישור:', url, '→', urlForApi);
+        if (!shortMap[url]) {
+            shortMap[url] = await shortenUrl(urlForApi);
+        }
+    }
+    console.log('📋 מפת קיצורים:', shortMap);
+    const result = text.replace(pattern, url => shortMap[url] || url);
+    console.log('📝 טקסט אחרי קיצור:', result);
+    return result;
+}
+
 // צור פופאפ AI פעם אחת בלבד בהתחלה
 (function createAiModalOnce(){
   if (document.getElementById("ai-upgrade-modal")) return;
@@ -942,13 +1142,18 @@ function loadPostsFromDB() {
 }
 
 // מצייר פוסטים
-function renderPosts(posts) {
+
+async function renderPosts(posts) {
   const area = document.getElementById("posts-area");
+  
+  // שלב 1: הצג את כל הפוסטים מיד בלי לחכות לקיצור קישורים
   let html = '';
-  posts.forEach(post => {
+  for (const post of posts) {
     const statusIcon = getStatusIcon(post.status || 'active');
     const scheduleInfo = getDetailedScheduleInfo(post);
-    const shortText = escapeHtml((post.text || '').slice(0, 60));
+    // הצג תחילה את הטקסט המקורי (מהיר)
+    let shortText = post.text || '';
+    shortText = escapeHtml(shortText.slice(0, 60));
     html += `
       <div class="post-card-collapsed" data-post-id="${post.id}" data-status="${post.status || 'active'}" onclick="openPostCard(${post.id})" style="position:relative;border:1px solid #ddd;margin:10px 0;padding:15px;border-radius:8px;cursor:pointer;transition:all 0.2s;background:#fff;" onmouseover="this.style.background='#f8f9fa'; this.style.borderColor='#0b2743';" onmouseout="this.style.background='#fff'; this.style.borderColor='#ddd';">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:15px;">
@@ -956,18 +1161,18 @@ function renderPosts(posts) {
             ${statusIcon}
             <span class="card-title" style="font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(post.title || 'ללא כותרת')}</span>
           </div>
-          
-          <div style="flex:2;min-width:0;padding:0 10px;">${scheduleInfo}</div>
-          
+          <div style="flex:2;min-width:0;padding:0 10px;" id="schedule-info-${post.id}">${scheduleInfo}</div>
           <button class="open-card-btn" onclick="event.stopPropagation(); openPostCard(${post.id})" style="background:#0b2743;color:#fff;border:none;border-radius:5px;padding:6px 12px;font-size:0.85em;white-space:nowrap;transition:background 0.2s;" onmouseover="this.style.background='#1a365d'" onmouseout="this.style.background='#0b2743'">ערוך</button>
         </div>
       </div>
       <div class="post-card-expanded" id="expand-post-${post.id}" style="display:none"></div>
     `;
-  });
+  }
+  
+  // הצג את הפוסטים מיד!
   area.innerHTML = html;
   
-  // אתחל סינונים אחרי שהפוסטים נטענו
+  // אתחל סינונים מיד
   setTimeout(() => {
     if (!window.statusFiltersInitialized) {
       initStatusFilters();
@@ -975,6 +1180,27 @@ function renderPosts(posts) {
     }
     applyStatusFilter();
   }, 100);
+  
+  // שלב 2: עכשיו עבוד על קיצור הקישורים ברקע (לא חוסם)
+  setTimeout(async () => {
+    console.log('🔗 מתחיל קיצור קישורים ברקע...');
+    for (const post of posts) {
+      try {
+        if (post.text) {
+          const originalText = post.text;
+          const shortenedText = await autoShortenLinks(originalText);
+          if (shortenedText !== originalText) {
+            // עדכן את הטקסט בפוסט
+            post.text = shortenedText;
+            console.log(`✅ עודכן קיצור קישורים לפוסט ${post.id}`);
+          }
+        }
+      } catch (error) {
+        console.warn(`⚠️ שגיאה בקיצור קישורים לפוסט ${post.id}:`, error);
+      }
+    }
+    console.log('🎉 סיום קיצור קישורים ברקע');
+  }, 200); // התחל אחרי 200ms
 }
 
 // פונקציה להצגת אייקון סטטוס
@@ -1043,7 +1269,7 @@ function getDetailedScheduleInfo(post) {
 }
 
 // בלחיצה – טוען HTML מלא לכרטיסיה, פותח, וסוגר אחרים
-function openPostCard(postId) {
+async function openPostCard(postId) {
   const expandDiv = document.getElementById('expand-post-' + postId);
 
   // אם הכרטיס כבר פתוח – סגור אותו ותחזור
@@ -1064,6 +1290,7 @@ function openPostCard(postId) {
     return;
   }
 
+  // הצג את הכרטיס מיד בלי לחכות לקיצור קישורים
   expandDiv.innerHTML = buildPostCardHtml(post, collections);
   
   // עדכן את ה-dataset של הכרטיס עם נתוני הפוסט
@@ -1077,17 +1304,48 @@ function openPostCard(postId) {
     postCard.dataset.repeat_mode = post.repeat_mode || 'unlimited';
     postCard.dataset.start_date = post.start_date || '';
     postCard.dataset.end_date = post.end_date || '';
-    
-    console.log('עדכון dataset של הכרטיס עם נתוני הפוסט:', {
-      status: postCard.dataset.status,
-      schedule_type: postCard.dataset.schedule_type,
-      days_of_week: postCard.dataset.days_of_week,
-      monthly_date: postCard.dataset.monthly_date,
-      one_time_date: postCard.dataset.one_time_date
-    });
   }
   
+  // הפעל את האירועים של הכרטיס
   initPostCardEvents(postCard);
+  
+  // עכשיו עבוד על קיצור קישורים ברקע (לא חוסם)
+  setTimeout(async () => {
+    if (post.text) {
+      console.log(`🔗 מתחיל קיצור קישורים ברקע לפוסט ${postId}...`);
+      try {
+        const originalText = post.text;
+        const shortenedText = await autoShortenLinks(originalText);
+        if (shortenedText !== originalText) {
+          post.text = shortenedText;
+          
+          // עדכן את התצוגה עם הטקסט המקוצר
+          const currentExpandDiv = document.getElementById('expand-post-' + postId);
+          if (currentExpandDiv && currentExpandDiv.style.display === 'block') {
+            currentExpandDiv.innerHTML = buildPostCardHtml(post, collections);
+            // התקן מחדש את ה-dataset
+            const updatedPostCard = currentExpandDiv.querySelector('.post-card-expanded-inner');
+            if (updatedPostCard) {
+              updatedPostCard.dataset.status = post.status || 'active';
+              updatedPostCard.dataset.schedule_type = post.schedule_type || '';
+              updatedPostCard.dataset.days_of_week = post.days_of_week || '';
+              updatedPostCard.dataset.monthly_date = post.monthly_date || '';
+              updatedPostCard.dataset.one_time_date = post.one_time_date || '';
+              updatedPostCard.dataset.repeat_mode = post.repeat_mode || 'unlimited';
+              updatedPostCard.dataset.start_date = post.start_date || '';
+              updatedPostCard.dataset.end_date = post.end_date || '';
+              
+              // הפעל מחדש את האירועים
+              initPostCardEvents(updatedPostCard);
+            }
+            console.log(`✅ עודכן קיצור קישורים בכרטיס פוסט ${postId}`);
+          }
+        }
+      } catch (error) {
+        console.warn(`⚠️ שגיאה בקיצור קישורים לפוסט ${postId}:`, error);
+      }
+    }
+  }, 300); // התחל אחרי 300ms
 
   // התאם אוטומטית את גובה ה-textarea לתוכן
   setTimeout(() => {
@@ -1291,6 +1549,18 @@ function initPostCardEvents(card) {
         console.log('שמירה אוטומטית אחרי עריכת טקסט...');
         autoSave(postId);
       }, 2000); // המתן 2 שניות אחרי שהמשתמש סיים להקליד
+    });
+    
+    // קיצור קישורים אוטומטי בזמן אמת
+    textarea.addEventListener("blur", async function() {
+      const originalText = this.value;
+      const shortenedText = await autoShortenLinks(originalText);
+      if (shortenedText !== originalText) {
+        this.value = shortenedText;
+        autoResizeTextarea(this);
+        // שמור את השינוי
+        setTimeout(() => autoSave(postId), 500);
+      }
     });
   }
 

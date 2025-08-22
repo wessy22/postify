@@ -10,18 +10,32 @@ const now = new Date().toLocaleString("he-IL", { timeZone: "Asia/Jerusalem" });
 const hostname = fs.readFileSync(path.join(__dirname, "instance-name.txt"), "utf-8").trim();
 
 function getProviderInfo(callback) {
-  https.get("https://ipinfo.io/json", (res) => {
+  const timeout = setTimeout(() => {
+    callback(new Error("Timeout after 5 seconds"));
+  }, 5000);
+
+  const req = https.get("https://ipinfo.io/json", (res) => {
+    clearTimeout(timeout);
     let data = "";
     res.on("data", chunk => data += chunk);
     res.on("end", () => {
-      const info = JSON.parse(data);
-      callback(null, {
-        ip: info.ip,
-        org: info.org || "Unknown provider"
-      });
+      try {
+        const info = JSON.parse(data);
+        callback(null, {
+          ip: info.ip,
+          org: info.org || "Unknown provider"
+        });
+      } catch (parseErr) {
+        callback(parseErr);
+      }
     });
   }).on("error", (err) => {
+    clearTimeout(timeout);
     callback(err);
+  });
+
+  req.setTimeout(5000, () => {
+    req.destroy();
   });
 }
 

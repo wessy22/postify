@@ -2,6 +2,19 @@ const fs = require("fs");
 const path = require("path");
 const https = require("https");
 
+// ================================================================
+// SYNC-USER-DATA - סנכרון פשוט של נתונים מהאתר לשרת
+// ================================================================
+// תפקידים:
+// 1. מוריד את כל נתוני הפוסטים מהאתר (SQL)
+// 2. שומר אותם כקבצי JSON בשרת המקומי
+// 3. מוריד תמונות וקבצים נלווים
+// 4. מנקה את התיקייה לפני הסנכרון (מחיקה מלאה ובנייה מחדש)
+// 
+// הקוד פשוט שולף את מה שה-API מחזיר מה-SQL - כולל publish_time
+// אם publish_time לא מגיע, זה אומר שהוא לא נכלל ב-get-user-data.php
+// ================================================================
+
 // 🧠 קרא את שם השרת מתוך הקובץ instance-name.txt
 const instanceNameFile = path.join(__dirname, "instance-name.txt");
 if (!fs.existsSync(instanceNameFile)) {
@@ -16,15 +29,20 @@ const apiUrl = `https://postify.co.il/wp-content/postify-api/get-user-data.php?h
 
 function deleteFolderRecursive(folder) {
   if (fs.existsSync(folder)) {
-    fs.readdirSync(folder).forEach(file => {
-      const curPath = path.join(folder, file);
-      if (fs.lstatSync(curPath).isDirectory()) {
-        deleteFolderRecursive(curPath);
-      } else {
-        fs.unlinkSync(curPath);
-      }
-    });
-    fs.rmdirSync(folder);
+    try {
+      fs.readdirSync(folder).forEach(file => {
+        const curPath = path.join(folder, file);
+        if (fs.lstatSync(curPath).isDirectory()) {
+          deleteFolderRecursive(curPath);
+        } else {
+          fs.unlinkSync(curPath);
+        }
+      });
+      fs.rmdirSync(folder);
+    } catch (error) {
+      console.log(`⚠️ Warning: Could not delete ${folder} - ${error.message}`);
+      // ממשיכים למרות השגיאה
+    }
   }
 }
 
@@ -49,10 +67,16 @@ function downloadImage(url, dest) {
   try {
     console.log(`🌐 Fetching post data for ${hostname}...`);
 
-    // מחיקה של כל התיקייה הקיימת לפני סנכרון
+    // מחיקה של כל התיקייה הקיימת לפני סנכרון (עם טיפול בשגיאות)
     if (fs.existsSync(userFolder)) {
       console.log("🧹 Cleaning user folder before sync...");
-      deleteFolderRecursive(userFolder);
+      try {
+        deleteFolderRecursive(userFolder);
+        console.log("✅ User folder cleaned successfully");
+      } catch (error) {
+        console.log(`⚠️ Warning: Could not fully clean user folder - ${error.message}`);
+        console.log("🔄 Continuing with sync anyway...");
+      }
     }
 
     const res = await fetch(apiUrl);
@@ -96,6 +120,7 @@ function downloadImage(url, dest) {
     }
 
     console.log("✅ Sync complete.");
+    
   } catch (err) {
     console.error("❌ Sync failed:", err.message);
   }

@@ -56,7 +56,12 @@ function downloadImage(url, dest) {
     }
 
     const res = await fetch(apiUrl);
-    const posts = await res.json();
+    const data = await res.json();
+    console.log("DEBUG data:", data);
+    const posts = data.posts;
+    if (!Array.isArray(posts)) {
+      throw new Error("posts is not iterable. Response: " + JSON.stringify(data));
+    }
 
     for (const post of posts) {
       const postPath = path.join(userFolder, "posts", `${post.name}.json`);

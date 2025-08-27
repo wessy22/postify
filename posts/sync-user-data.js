@@ -78,15 +78,11 @@ function downloadImage(url, dest) {
         const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'];
         let isImage = imageExts.includes(ext);
         let destName;
-        if (isImage && ext) {
-          // שמור את הסיומת המקורית (כולל GIF)
-          destName = `${i + 1}${ext}`;
-        } else if (ext) {
-          // קובץ לא תמונה אבל יש סיומת - שמור אותה
-          destName = `${i + 1}${ext}`;
-        } else {
-          // אין סיומת בכלל - תן ברירת מחדל jpg
+        if (isImage) {
           destName = `${i + 1}.jpg`;
+        } else {
+          // אם זה וידאו או קובץ אחר, שמור את הסיומת המקורית
+          destName = `${i + 1}${ext}`;
         }
         const imageDest = path.join(postImageDir, destName);
         if (!fs.existsSync(imageDest)) {

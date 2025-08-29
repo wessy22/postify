@@ -1,6 +1,6 @@
 const fs = require('fs');
 const { exec } = require('child_process');
-const { sendErrorMail, sendMail } = require("../mailer");
+const { sendErrorMail, sendMail } = require("./mailer");
 
 // ================================================================
 // RUNDAY - מערכת תזמון פוסטים משודרגת עם מניעת כפילויות תאריכים
@@ -542,16 +542,7 @@ function selectPostsForDay(allPosts, today = new Date()) {
       }
     }
     
-    // אם יש פחות פוסטים ממה שרוצים - חזרה על הפוסט האחרון
-    while (selectedPosts.length < DAILY_SETTINGS.MAX_POSTS_PER_DAY && sortedActivePosts.length > 0) {
-      const lastSelectedActivePost = selectedPosts[selectedPosts.length - 1];
-      if (lastSelectedActivePost && isActivePost(lastSelectedActivePost)) {
-        console.log(`� מוסיף שוב את הפוסט האחרון: ${lastSelectedActivePost.filename}`);
-        selectedPosts.push({ ...lastSelectedActivePost, duplicateRun: true });
-      } else {
-        break;
-      }
-    }
+  // אם יש פחות פוסטים ממה שרוצים - לא חוזרים על פוסטים קיימים, פשוט עוצרים בכמות שיש
   }
   
   console.log(`📋 פוסטים נבחרים סופיים: ${selectedPosts.map(p => `${p.filename} (${p.status}${p.duplicateRun ? ' - חזרה' : ''})`).join(', ')}`);
@@ -674,8 +665,8 @@ function updateHeartbeat({ group, postFile, status, index }) {
   try {
     const path = require("path");
     const { spawn, exec } = require("child_process");
-    const logToSheet = require("../log-to-sheets");
-    const config = require("../config.json");
+  const logToSheet = require("./log-to-sheets");
+  const config = require("./config.json");
 
     let instanceName;
     let POSTS_FOLDER;

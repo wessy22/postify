@@ -300,7 +300,9 @@ if (!composerFound) {
           const text = await page.evaluate(el => el.textContent, button);
           if (
             text.includes("כאן כותבים") ||
-            text.includes("Write something")
+            text.includes("Write something") ||
+            text.includes("התחל דיון") ||
+            text.toLowerCase().includes("start discussion")
           ) {
             await button.click();
             composerFound = true;

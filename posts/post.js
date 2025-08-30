@@ -112,7 +112,7 @@ async function main() {
 
     console.log("📍 Navigating to group page...");
     await page.goto(groupUrl, { waitUntil: "networkidle2", timeout: 0 });
-    await logToSheet('Post started', 'Info', groupUrl, 'Navigated to group page');
+  await logToSheet('Post started', 'Info', groupUrl, 'Navigated to group page', postData.title || '');
 
     console.log("🧭 Looking for composer...");
 
@@ -319,7 +319,7 @@ if (!composerFound) {
         const debugPath = `C:\\temp\\composer-not-found-${Date.now()}.png`;
         await page.screenshot({ path: debugPath });
         console.log("❌ Composer not found after all attempts. Screenshot saved:", debugPath);
-        await logToSheet('Composer not found', 'Error', groupUrl, `לא נמצא כפתור "כאן כותבים" גם אחרי רענון, המתנה וגלילה. Screenshot: ${debugPath}`);
+  await logToSheet('Composer not found', 'Error', groupUrl, `לא נמצא כפתור "כאן כותבים" גם אחרי רענון, המתנה וגלילה. Screenshot: ${debugPath}`, postData.title || '');
         await sendErrorMail("❌ Composer not found", `לא נמצא composer בקבוצה: ${groupUrl}\nScreenshot: ${debugPath}`);
         await browser.close();
         return; // עובר לקבוצה הבאה (אם יש לולאה), לא זורק שגיאה
@@ -349,7 +349,7 @@ if (!composerFound) {
         console.log("✅ Image copied to clipboard.");
       } catch (error) {
         console.error(`❌ Failed to copy ${imagePath} to clipboard: ${error.message}`);
-        await logToSheet('Image copy failed', 'Error', groupUrl, imagePath);
+  await logToSheet('Image copy failed', 'Error', groupUrl, imagePath, postData.title || '');
         continue;
       }
 
@@ -419,7 +419,7 @@ if (!composerFound) {
           }
         } catch (error) {
           console.error(`❌ שגיאה בהעלאת וידאו ${videoPath}: ${error.message}`);
-          await logToSheet('Video upload failed', 'Error', groupUrl, videoPath);
+          await logToSheet('Video upload failed', 'Error', groupUrl, videoPath, postData.title || '');
         }
       }
     }
@@ -447,7 +447,7 @@ if (!composerFound) {
 
   } catch (err) {
     console.error("❌ Error:", err.message);
-    await logToSheet('Post failed', 'Error', groupName, err.message);
+  await logToSheet('Post failed', 'Error', groupName, err.message, postData.title || '');
     if (browser) await browser.close();
 
     const message = [

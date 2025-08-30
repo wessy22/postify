@@ -80,10 +80,10 @@ async function getOrCreateSheet(sheetName) {
 
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: `${sheetName}!A1:E1`,
+    range: `${sheetName}!A1:F1`,
     valueInputOption: 'RAW',
     resource: {
-      values: [['Timestamp', 'Action', 'Status', 'Group', 'Notes']],
+      values: [['Timestamp', 'Action', 'Status', 'Group', 'Notes', 'Post Name']],
     },
     auth,
   });
@@ -159,7 +159,8 @@ async function ensureConditionalFormattingOnce() {
   }
 }
 
-async function logToSheet(action, status, group = '', notes = '', attempt = 1) {
+// הוספת postName כפרמטר חמישי
+async function logToSheet(action, status, group = '', notes = '', postName = '', attempt = 1) {
   try {
     await auth.authorize();
     await ensureSpreadsheetExists();
@@ -171,13 +172,14 @@ async function logToSheet(action, status, group = '', notes = '', attempt = 1) {
     await getOrCreateSheet(dateSheetName);
     await ensureConditionalFormattingOnce();
 
+
     await sheets.spreadsheets.values.append({
       spreadsheetId,
-      range: `${dateSheetName}!A:E`,
+      range: `${dateSheetName}!A:F`,
       valueInputOption: 'RAW',
       insertDataOption: 'INSERT_ROWS',
       resource: {
-        values: [[timestamp, action, status, group, notes]],
+        values: [[timestamp, action, status, group, notes, postName]],
       },
       auth,
     });

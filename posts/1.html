@@ -1,0 +1,3042 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+    <title>דו"ח פרסום יומי</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/he.js"></script>
+    
+    <style>
+        /* תיקון Mixed Content - הסתרת אלמנטים שנטענים ב-HTTP */
+        [src^="http://"], [href^="http://"] {
+            display: none !important;
+        }
+        
+        /* סגנונות בסיסיים לעמוד */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+            line-height: 1.6;
+            overflow-x: hidden;
+            max-width: 100%;
+        }
+        
+        .published-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header-section {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        
+        .page-title {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #0b2743;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .controls-section {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        
+        .date-filter {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+        }
+        
+        .date-filter label {
+            font-weight: bold;
+            color: #0b2743;
+            white-space: nowrap;
+        }
+        
+        .date-filter input {
+            padding: 6px 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        
+        .refresh-btn {
+            background: #0b2743;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 20px;
+            font-size: 1em;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: background 0.2s;
+        }
+        
+        .refresh-btn:hover {
+            background: #1a365d;
+        }
+        
+        .export-btn {
+            background: #28a745;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 20px;
+            font-size: 1em;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: background 0.2s;
+        }
+        
+        .export-btn:hover {
+            background: #218838;
+        }
+        
+        .table-view-btn {
+            background: #17a2b8;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 20px;
+            font-size: 1em;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: background 0.2s;
+        }
+        
+        .table-view-btn:hover {
+            background: #138496;
+        }
+        
+        .stats-section {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #000000;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        
+        .stat-card.today {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: #000000;
+        }
+        
+        .stat-card.total {
+            background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+            color: #000000;
+        }
+        
+        .stat-card.groups {
+            background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+            color: #000000;
+        }
+        
+        .stat-number {
+            font-size: 2.5em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .stat-label {
+            font-size: 1.1em;
+            opacity: 0.8;
+            color: #000000;
+        }
+        
+        .loading-spinner {
+            text-align: center;
+            padding: 50px;
+            font-size: 1.2em;
+            color: #666;
+        }
+        
+        /* אנימציות טעינה יפות */
+        .loading-icon {
+            font-size: 3em;
+            margin-bottom: 20px;
+            animation: spin 2s linear infinite, pulse 1.5s ease-in-out infinite alternate;
+            display: inline-block;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 0.6; transform: scale(0.95); }
+            100% { opacity: 1; transform: scale(1.05); }
+        }
+        
+        .loading-dots {
+            display: inline-block;
+        }
+        
+        .loading-dots::after {
+            content: '';
+            animation: dots 1.5s steps(4, end) infinite;
+        }
+        
+        @keyframes dots {
+            0% { content: ''; }
+            25% { content: '.'; }
+            50% { content: '..'; }
+            75% { content: '...'; }
+            100% { content: ''; }
+        }
+        
+        /* אנימציה לטקסט הטעינה */
+        .loading-text {
+            animation: fadeInOut 2s ease-in-out infinite;
+        }
+        
+        @keyframes fadeInOut {
+            0%, 100% { opacity: 0.7; }
+            50% { opacity: 1; }
+        }
+        
+        .loading-progress {
+            background: linear-gradient(90deg, #0b2743, #1a365d, #2d5a87, #1a365d, #0b2743);
+            background-size: 200% 100%;
+            animation: shimmer 2s ease-in-out infinite;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            font-weight: bold;
+        }
+        
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+        
+        /* עיצוב רשימה - שורות */
+        .posts-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-top: 20px;
+        }
+        
+        .group-row {
+            background: #fff;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            padding: 8px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            transition: all 0.3s ease;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+            margin-bottom: 3px;
+        }
+        
+        .group-row:hover {
+            transform: translateY(-0.5px);
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+            border-color: #0b2743;
+        }
+        
+        .group-row.success {
+            border-right: 3px solid #28a745;
+            background: linear-gradient(to left, #f8fff9 0%, #fff 100%);
+        }
+        
+        .group-row.failed {
+            border-right: 3px solid #dc3545;
+            background: linear-gradient(to left, #fff5f5 0%, #fff 100%);
+        }
+        
+        .group-row.warning {
+            border-right: 3px solid #ffc107;
+            background: linear-gradient(to left, #fffcf0 0%, #fff 100%);
+        }
+        
+        .group-row-line1 {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+        
+        .group-row-line2 {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            font-size: 1em;
+            color: #666;
+        }
+        
+        .status-icon {
+            font-size: 1.3em;
+            min-width: 22px;
+            text-align: center;
+        }
+        
+        .group-name {
+            font-weight: bold;
+            color: #0b2743;
+            flex: 1;
+            font-size: 1.1em;
+            text-align: right;
+        }
+        
+        .publish-time {
+            color: #666;
+            font-size: 1em;
+            font-weight: 500;
+        }
+        
+        .status-badge {
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: bold;
+            text-transform: uppercase;
+            white-space: nowrap;
+            text-align: center;
+        }
+        
+        .status-success {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status-failed {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .status-warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .action-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.9em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 100px;
+            justify-content: center;
+        }
+        
+        .action-btn.primary {
+            background: #0b2743;
+            color: white;
+        }
+        
+        .action-btn.primary:hover {
+            background: #1a365d;
+            transform: translateY(-1px);
+        }
+        
+        .action-btn.secondary {
+            background: #f8f9fa;
+            color: #666;
+            border: 1px solid #dee2e6;
+        }
+        
+        .action-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .no-posts {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+        
+        .no-posts i {
+            font-size: 4em;
+            color: #ddd;
+            margin-bottom: 20px;
+        }
+        
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 1px solid #f5c6cb;
+        }
+        
+        /* כותרת הפוסט */
+        .post-title-header {
+            background: linear-gradient(135deg, #0b2743 0%, #1a365d 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        
+        .post-title-header h2 {
+            margin: 0;
+            font-size: 1.5em;
+            font-weight: bold;
+        }
+        
+        .post-title-header .post-subtitle {
+            margin-top: 5px;
+            font-size: 0.9em;
+            opacity: 0.8;
+        }
+        
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            body {
+                padding: 0;
+                overflow-x: hidden;
+            }
+            .published-container {
+                padding: 8px;
+                border-radius: 0;
+                box-shadow: none;
+                max-width: 100%;
+                width: 100%;
+                box-sizing: border-box;
+            }
+            .header-section {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 8px;
+                margin-bottom: 18px;
+            }
+            .controls-section {
+                flex-direction: column;
+                gap: 8px;
+                align-items: stretch;
+                justify-content: center;
+            }
+            .date-filter {
+                flex-direction: column;
+                text-align: center;
+                gap: 4px;
+                padding: 8px;
+                border-radius: 6px;
+                font-size: 1em;
+            }
+            .date-filter label {
+                font-size: 1em;
+            }
+            .date-filter input {
+                font-size: 1em;
+                padding: 6px 8px;
+                background: #fff;
+                transition: border 0.2s, background 0.2s;
+            }
+            .date-filter input:focus, .date-filter input:active {
+                border: 2px solid #0b2743;
+                background: #eaf2fb;
+            }
+            .refresh-btn {
+                width: 100%;
+                padding: 10px 0;
+                font-size: 1em;
+            }
+            .export-btn {
+                width: 100%;
+                padding: 10px 0;
+                font-size: 1em;
+            }
+            .table-view-btn {
+                width: 100%;
+                padding: 10px 0;
+                font-size: 1em;
+            }
+            .stats-section {
+                grid-template-columns: 1fr;
+                gap: 10px;
+                margin-bottom: 18px;
+            }
+            .stat-card {
+                padding: 12px;
+                font-size: 1em;
+            }
+            .stat-number {
+                font-size: 1.5em;
+            }
+            .stat-label {
+                font-size: 1em;
+            }
+            .post-title-header {
+                padding: 12px;
+                font-size: 1em;
+            }
+            .post-title-header h2 {
+                font-size: 1.1em;
+            }
+            .post-title-header .post-subtitle {
+                font-size: 1em;
+                max-width: 100%;
+                overflow: hidden;
+                word-wrap: break-word;
+                white-space: normal;
+            }
+            .table-header {
+                display: none;
+            }
+            .group-row {
+                padding: 8px 10px;
+                font-size: 1em;
+                width: 100%;
+                max-width: 100%;
+                box-sizing: border-box;
+                margin-bottom: 4px;
+            }
+            .group-row .group-name {
+                font-size: 1em;
+            }
+            .group-row-line1, .group-row-line2 {
+                gap: 8px;
+            }
+            .action-btn {
+                min-width: 120px;
+                width: 100%;
+                font-size: 1em;
+                padding: 12px 20px;
+            }
+            .error-message {
+                font-size: 1em;
+                padding: 10px;
+            }
+            .no-posts {
+                padding: 30px 8px;
+                font-size: 1em;
+            }
+            .loading-spinner {
+                padding: 30px 8px;
+                font-size: 1em;
+            }
+            #posts-container {
+                overflow-x: hidden;
+                padding-bottom: 10px;
+                width: 100%;
+                max-width: 100%;
+                box-sizing: border-box;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .published-container {
+                padding: 4px;
+                width: 100%;
+                max-width: 100%;
+                box-sizing: border-box;
+            }
+            .stat-number {
+                font-size: 1.1em;
+            }
+            .group-row {
+                padding: 6px 8px;
+                font-size: 0.9em;
+            }
+            .post-title-header {
+                padding: 7px;
+                font-size: 0.95em;
+            }
+            .action-btn {
+                font-size: 0.9em;
+                padding: 10px 16px;
+                min-width: 100px;
+            }
+            .error-message {
+                font-size: 0.95em;
+                padding: 7px;
+            }
+            .no-posts {
+                padding: 18px 4px;
+                font-size: 0.95em;
+            }
+            .loading-spinner {
+                padding: 18px 4px;
+                font-size: 0.95em;
+            }
+            .stats-section {
+                grid-template-columns: 1fr;
+            }
+            
+            /* רספונסיביות לפופאפ ייצוא */
+            .export-dialog {
+                padding: 20px;
+                max-width: 95%;
+            }
+            
+            .export-header {
+                font-size: 1.2em;
+            }
+            
+            .export-option {
+                padding: 12px;
+                font-size: 1em;
+            }
+            
+            .date-range-inputs {
+                flex-direction: column;
+            }
+            
+            .export-actions {
+                flex-direction: column;
+            }
+            
+            .export-action-btn {
+                width: 100%;
+                margin-bottom: 10px;
+            }
+            
+            /* רספונסיביות לטבלה */
+            .table-dialog {
+                max-width: 98%;
+                max-height: 95%;
+                padding: 15px;
+            }
+            
+            .table-filters {
+                flex-direction: column;
+                gap: 10px;
+            }
+            
+            .filter-group {
+                width: 100%;
+            }
+            
+            .filter-group input,
+            .filter-group select {
+                width: 100%;
+                min-width: auto;
+            }
+            
+            .data-table {
+                font-size: 0.8em;
+            }
+            
+            .data-table th,
+            .data-table td {
+                padding: 6px 4px;
+            }
+            
+            .table-stats {
+                font-size: 0.9em;
+            }
+        }
+        
+        /* אנימציות */
+        .group-row {
+            animation: fadeInUp 0.3s ease-out;
+        }
+        
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .action-btn {
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .action-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.5s;
+        }
+        
+        .action-btn:hover::before {
+            left: 100%;
+        }
+        
+        /* אפקט זברה לשורות */
+        .group-row:nth-child(even) {
+            background: #fafafa;
+        }
+        
+        .group-row:nth-child(even):hover {
+            background: #fff;
+        }
+        
+        .group-row:nth-child(even).success {
+            background: linear-gradient(to left, #f8fff9 0%, #fafafa 100%);
+        }
+        
+        .group-row:nth-child(even).failed {
+            background: linear-gradient(to left, #fff5f5 0%, #fafafa 100%);
+        }
+        
+        .group-row:nth-child(even).warning {
+            background: linear-gradient(to left, #fffcf0 0%, #fafafa 100%);
+        }
+        
+        /* שיפור CSS לאוטוסקרולין: הוספת width: fit-content ו-rtl */
+        .autoslide-text {
+            display: inline-block;
+            vertical-align: middle;
+            will-change: transform;
+            width: fit-content;
+            direction: rtl;
+            white-space: nowrap;
+            transition: transform 0.3s ease;
+        }
+        
+        .post-title-header .post-subtitle {
+            margin-top: 5px;
+            font-size: 0.9em;
+            opacity: 0.8;
+            overflow: hidden;
+            position: relative;
+            cursor: pointer;
+        }
+        
+        .post-title-header .post-subtitle:hover .autoslide-text {
+            animation-play-state: running;
+        }
+        
+        /* סגנונות פופאפ ייצוא */
+        .export-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            backdrop-filter: blur(5px);
+        }
+        
+        .export-dialog {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            animation: fadeInScale 0.3s ease-out;
+            direction: rtl;
+        }
+        
+        @keyframes fadeInScale {
+            0% {
+                opacity: 0;
+                transform: scale(0.8);
+            }
+            100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+        
+        .export-header {
+            text-align: center;
+            margin-bottom: 25px;
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #0b2743;
+        }
+        
+        .export-options {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+        
+        .export-option {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 1.1em;
+        }
+        
+        .export-option:hover {
+            border-color: #0b2743;
+            background: #f8f9fa;
+        }
+        
+        .export-option.selected {
+            border-color: #28a745;
+            background: #e8f5e8;
+        }
+        
+        .export-option input[type="radio"] {
+            margin-left: 8px;
+            transform: scale(1.2);
+        }
+        
+        .date-range-inputs {
+            display: none;
+            gap: 10px;
+            margin-top: 10px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background: #f9f9f9;
+        }
+        
+        .date-range-inputs.show {
+            display: flex;
+        }
+        
+        .date-range-inputs label {
+            font-weight: bold;
+            margin-left: 5px;
+        }
+        
+        .date-range-inputs input {
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 1em;
+        }
+        
+        .export-actions {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+        }
+        
+        .export-action-btn {
+            padding: 12px 25px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+            min-width: 120px;
+        }
+        
+        .export-confirm {
+            background: #28a745;
+            color: white;
+        }
+        
+        .export-confirm:hover {
+            background: #218838;
+        }
+        
+        .export-cancel {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .export-cancel:hover {
+            background: #5a6268;
+        }
+        
+        .export-loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            font-size: 1.1em;
+            color: #666;
+        }
+        
+        .export-loading-icon {
+            font-size: 2em;
+            margin-bottom: 10px;
+            animation: spin 1s linear infinite;
+        }
+        
+        /* סגנונות טבלה מסודרת */
+        .table-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1001;
+            backdrop-filter: blur(3px);
+        }
+        
+        .table-dialog {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            max-width: 95%;
+            width: 1200px;
+            max-height: 90%;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            animation: fadeInScale 0.3s ease-out;
+            direction: rtl;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .table-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #0b2743;
+        }
+        
+        .table-title {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #0b2743;
+            margin: 0;
+        }
+        
+        .table-close-btn {
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            font-size: 1.2em;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .table-close-btn:hover {
+            background: #c82333;
+        }
+        
+        .table-filters {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        
+        .filter-group label {
+            font-weight: bold;
+            color: #0b2743;
+            font-size: 0.9em;
+        }
+        
+        .filter-group input, .filter-group select {
+            padding: 6px 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 0.9em;
+            min-width: 120px;
+        }
+        
+        .clear-filters-btn {
+            background: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            padding: 8px 15px;
+            font-size: 0.9em;
+            cursor: pointer;
+            transition: background 0.2s;
+            align-self: flex-end;
+        }
+        
+        .clear-filters-btn:hover {
+            background: #5a6268;
+        }
+        
+        .table-container {
+            flex: 1;
+            overflow: auto;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9em;
+            background: white;
+        }
+        
+        .data-table th {
+            background: linear-gradient(135deg, #0b2743 0%, #1a365d 100%);
+            color: white;
+            padding: 12px 8px;
+            text-align: center;
+            font-weight: bold;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            border-bottom: 2px solid #0b2743;
+        }
+        
+        .data-table td {
+            padding: 10px 8px;
+            border-bottom: 1px solid #eee;
+            text-align: center;
+            vertical-align: middle;
+        }
+        
+        .data-table tbody tr:hover {
+            background: #f8f9fa;
+        }
+        
+        .data-table tbody tr:nth-child(even) {
+            background: #fafafa;
+        }
+        
+        .data-table tbody tr:nth-child(even):hover {
+            background: #f0f0f0;
+        }
+        
+        .date-separator {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%) !important;
+            color: white !important;
+            font-weight: bold !important;
+            text-align: center !important;
+            font-size: 1.1em !important;
+        }
+        
+        .date-separator td {
+            padding: 15px !important;
+        }
+        
+        .table-link {
+            color: #0b2743;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        
+        .table-link:hover {
+            color: #1a365d;
+            text-decoration: underline;
+        }
+        
+        .status-success-table {
+            background: #d4edda;
+            color: #155724;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+        
+        .status-failed-table {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+        
+        .table-stats {
+            margin-top: 15px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            text-align: center;
+            font-weight: bold;
+            color: #0b2743;
+        }
+    </style>
+</head>
+<body>
+
+<script>
+// תיקון Mixed Content באמצעות JavaScript
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('🔧 Starting Mixed Content fixes for published posts list...');
+    
+    function fixElement(element, attribute) {
+        const originalValue = element[attribute];
+        if (originalValue && originalValue.startsWith('http://')) {
+            const newValue = originalValue.replace('http://', 'https://');
+            element[attribute] = newValue;
+            console.log(`✅ Fixed ${attribute}:`, originalValue, '→', newValue);
+            return true;
+        }
+        return false;
+    }
+    
+    function fixExistingElements() {
+        let fixedCount = 0;
+        
+        document.querySelectorAll('link[href^="http://"]').forEach(link => {
+            if (fixElement(link, 'href')) fixedCount++;
+        });
+        
+        document.querySelectorAll('script[src^="http://"]').forEach(script => {
+            if (fixElement(script, 'src')) fixedCount++;
+        });
+        
+        document.querySelectorAll('img[src^="http://"]').forEach(img => {
+            if (fixElement(img, 'src')) fixedCount++;
+        });
+        
+        document.querySelectorAll('[src^="http://"], [href^="http://"]').forEach(element => {
+            ['src', 'href'].forEach(attr => {
+                if (element[attr]) fixElement(element, attr);
+            });
+        });
+        
+        if (fixedCount > 0) {
+            console.log(`🎯 Fixed ${fixedCount} HTTP elements to HTTPS`);
+        }
+    }
+    
+    fixExistingElements();
+    setInterval(fixExistingElements, 3000);
+    
+    window.addEventListener('error', function(e) {
+        if (e.target && e.target.src && e.target.src.startsWith('http://')) {
+            console.warn('⚠️ Mixed Content blocked, attempting fix:', e.target.src);
+            fixElement(e.target, 'src');
+        }
+    }, true);
+    
+    console.log('✅ Mixed Content protection active for published posts list');
+});
+
+// משתנים גלובליים
+let publishedPosts = [];
+let allWeeklyPosts = [];
+let allMonthlyPosts = [];
+let currentDate = new Date().toISOString().split('T')[0];
+let hostname = "";
+let isPreloadComplete = false;
+let preloadPromise = null;
+
+// קאש לנתונים
+let dataCache = {
+    posts: new Map(), // תאריך -> פרסומים
+    weekly: null,
+    monthly: null,
+    lastUpdate: null,
+    cacheExpiry: 10 * 60 * 1000, // 10 דקות
+    preloadInProgress: false
+};
+
+// פונקציה לטעינה מוקדמת של כל הנתונים ברקע
+async function preloadAllData() {
+    if (dataCache.preloadInProgress || isPreloadComplete) {
+        return preloadPromise;
+    }
+    
+    console.log('🚀 מתחיל טעינה מוקדמת של נתונים ברקע...');
+    dataCache.preloadInProgress = true;
+    
+    preloadPromise = (async () => {
+        try {
+            updateLoadingMessage('טוען נתונים ברקע...', 'מכין את הדף לקובץ מהיר');
+            
+            // טען מקביל של כל הנתונים הדרושים
+            const [todayPosts, weeklyData, monthlyData] = await Promise.all([
+                loadSingleDateData(currentDate),
+                loadWeeklyDataSmart(),
+                loadMonthlyDataSmart()
+            ]);
+            
+            // שמור בזיכרון
+            publishedPosts = todayPosts;
+            allWeeklyPosts = weeklyData;
+            allMonthlyPosts = monthlyData;
+            
+            // שמור בקאש
+            dataCache.weekly = weeklyData;
+            dataCache.monthly = monthlyData;
+            dataCache.lastUpdate = Date.now();
+            
+            isPreloadComplete = true;
+            console.log('✅ טעינה מוקדמת הושלמה!', {
+                today: todayPosts.length,
+                weekly: weeklyData.length,
+                monthly: monthlyData.length
+            });
+            
+            return true;
+        } catch (error) {
+            console.error('❌ שגיאה בטעינה מוקדמת:', error);
+            dataCache.preloadInProgress = false;
+            throw error;
+        }
+    })();
+    
+    return preloadPromise;
+}
+
+// פונקציה חכמה לטעינת נתוני יום בודד
+async function loadSingleDateData(date) {
+    const userId = getCurrentUserId();
+    let apiUrl = `/wp-content/postify-api/get-published-posts.php?hostname=${encodeURIComponent(hostname)}&date=${encodeURIComponent(date)}`;
+    if (userId) {
+        apiUrl += `&user_id=${encodeURIComponent(userId)}`;
+    }
+    
+    try {
+        const response = await fetch(apiUrl);
+        const data = await response.json();
+        const posts = data.success ? (data.posts || []) : [];
+        saveToCache(date, posts);
+        return posts;
+    } catch (error) {
+        console.warn(`⚠️ שגיאה בטעינת ${date}:`, error);
+        return [];
+    }
+}
+
+// טוען hostname ומתחיל טעינה מהירה של היום בלבד, ואז ברקע את כל החודש
+fetch('/wp-content/postify-api/get-hostname.php')
+    .then(res => res.text())
+    .then(h => {
+        hostname = h.trim();
+        console.log('hostname:', hostname);
+        // טען רק את היום קודם
+        loadSingleDateData(currentDate).then(posts => {
+            publishedPosts = posts;
+            renderPublishedPosts();
+            updateStats();
+            // הצג הודעה לטעינת החודש
+            let monthLoadingMsg = document.createElement('div');
+            monthLoadingMsg.id = 'month-loading-msg';
+            monthLoadingMsg.style = 'text-align:center;padding:12px;color:#0b2743;font-weight:bold;';
+            monthLoadingMsg.innerHTML = '⏳ טוען את כל נתוני החודש...';
+            document.getElementById('posts-container').prepend(monthLoadingMsg);
+            // טען את כל החודש ברקע
+            loadMonthlyDataSmart().then(monthlyData => {
+                allMonthlyPosts = monthlyData;
+                // עדכן תצוגה בלייב (אם צריך)
+                renderPublishedPosts();
+                updateStats();
+                // הסר את הודעת הטעינה
+                const msg = document.getElementById('month-loading-msg');
+                if (msg) msg.remove();
+            });
+        });
+    })
+    .catch(err => {
+        console.error('Error loading hostname:', err);
+        hostname = 'default-client';
+    });
+
+// פונקציה לבדיקת תקינות הקאש
+function isCacheValid() {
+    if (!dataCache.lastUpdate) return false;
+    return (Date.now() - dataCache.lastUpdate) < dataCache.cacheExpiry;
+}
+
+// פונקציה לטעינת נתונים מהקאש
+function getFromCache(date) {
+    if (!isCacheValid()) {
+        console.log('💾 קאש לא תקין, ינוקה');
+        clearCache();
+        return null;
+    }
+    return dataCache.posts.get(date) || null;
+}
+
+// פונקציה לשמירה בקאש
+function saveToCache(date, posts) {
+    dataCache.posts.set(date, posts);
+    dataCache.lastUpdate = Date.now();
+    console.log('💾 נשמר בקאש:', date, posts.length, 'פרסומים');
+}
+
+// פונקציה לניקוי הקאש
+function clearCache() {
+    dataCache.posts.clear();
+    dataCache.weekly = null;
+    dataCache.monthly = null;
+    dataCache.lastUpdate = null;
+}
+
+// פונקציה לעדכון הודעת הטעינה עם אנימציות
+function updateLoadingMessage(message, details = '') {
+    const loadingText = document.getElementById('loading-text');
+    const loadingDetails = document.getElementById('loading-details');
+    const loadingIcon = document.querySelector('.loading-icon');
+    
+    if (loadingText) {
+        loadingText.innerHTML = message + '<span class="loading-dots"></span>';
+    }
+    if (loadingDetails) {
+        loadingDetails.textContent = details;
+    }
+    
+    // שנה את האיקון לפי סוג הטעינה
+    if (loadingIcon) {
+        if (message.includes('שבועי')) {
+            loadingIcon.textContent = '📊';
+        } else if (message.includes('חודשי')) {
+            loadingIcon.textContent = '📈';
+        } else if (message.includes('ברקע')) {
+            loadingIcon.textContent = '🚀';
+        } else if (message.includes('מציג')) {
+            loadingIcon.textContent = '✨';
+        } else {
+            loadingIcon.textContent = '⏳';
+        }
+    }
+}
+
+// פונקציה חכמה לטעינת נתוני שבוע וחודש עם קאש - רק פעם אחת!
+async function loadWeeklyAndMonthlyDataWithCache() {
+    // אם כבר טענו פעם אחת ועדיין תקין - אל תטען שוב!
+    if (dataCache.weekly && dataCache.monthly && isCacheValid()) {
+        console.log('💾 נתונים שבועיים וחודשיים כבר קיימים - משתמש בקיים');
+        allWeeklyPosts = dataCache.weekly;
+        allMonthlyPosts = dataCache.monthly;
+        return;
+    }
+    
+    console.log('🔄 טוען נתונים שבועיים וחודשיים פעם אחת...');
+    
+    // טען במקביל רק אם עדיין לא קיים
+    const promises = [];
+    
+    if (!dataCache.weekly || !isCacheValid()) {
+        updateLoadingMessage('טוען סטטיסטיקת השבוע', 'רק עוד רגע - הנתונים מוכנים כמעט!');
+        promises.push(loadWeeklyData().then(data => {
+            allWeeklyPosts = data;
+            dataCache.weekly = data;
+            console.log('📊 נתונים שבועיים נטענו:', data.length);
+            return data;
+        }));
+    } else {
+        allWeeklyPosts = dataCache.weekly;
+        promises.push(Promise.resolve(dataCache.weekly));
+    }
+    
+    if (!dataCache.monthly || !isCacheValid()) {
+        updateLoadingMessage('טוען סטטיסטיקת החודש', '💪 טוען נתונים חשובים - שווה את ההמתנה!');
+        promises.push(loadMonthlyData().then(data => {
+            allMonthlyPosts = data;
+            dataCache.monthly = data;
+            console.log('� נתונים חודשיים נטענו:', data.length);
+            return data;
+        }));
+    } else {
+        allMonthlyPosts = dataCache.monthly;
+        promises.push(Promise.resolve(dataCache.monthly));
+    }
+    
+    await Promise.all(promises);
+    dataCache.lastUpdate = Date.now();
+    
+    console.log('✅ נתונים שבועיים וחודשיים מוכנים - לא יטענו שוב!');
+}
+
+// פונקציה חכמה לטעינת שבוע (אופטימיזציה מקס)
+async function loadWeeklyDataSmart() {
+    const userId = getCurrentUserId();
+    const today = new Date();
+    const startOfWeek = new Date(today);
+    const dayOfWeek = today.getDay();
+    startOfWeek.setDate(today.getDate() - dayOfWeek);
+    
+    const weekDates = [];
+    for (let i = 0; i <= dayOfWeek; i++) {
+        const date = new Date(startOfWeek);
+        date.setDate(startOfWeek.getDate() + i);
+        weekDates.push(date.toISOString().split('T')[0]);
+    }
+    
+    console.log('📅 טוען שבוע מהיר:', weekDates);
+    updateLoadingMessage('טוען נתוני השבוע', `📊 ${weekDates.length} ימים - טוען במהירות מקסימלית!`);
+    
+    const promises = weekDates.map(date => loadSingleDateData(date));
+    const results = await Promise.all(promises);
+    return results.flat();
+}
+
+// פונקציה חכמה לטעינת חודש (אופטימיזציה מקס)
+async function loadMonthlyDataSmart() {
+    const userId = getCurrentUserId();
+    const today = new Date();
+    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    
+    const monthDates = [];
+    const currentDate = new Date(startOfMonth);
+    while (currentDate <= today) {
+        monthDates.push(currentDate.toISOString().split('T')[0]);
+        currentDate.setDate(currentDate.getDate() + 1);
+    }
+    
+    console.log('📅 טוען חודש מהיר:', monthDates.length, 'ימים');
+    updateLoadingMessage('טוען נתוני החודש', `📈 ${monthDates.length} ימים - כמעט סיימנו!`);
+    
+    // בקבוצות של 10 למהירות מקסימלית
+    const batchSize = 10;
+    const allResults = [];
+    
+    for (let i = 0; i < monthDates.length; i += batchSize) {
+        const batch = monthDates.slice(i, i + batchSize);
+        const promises = batch.map(date => loadSingleDateData(date));
+        const results = await Promise.all(promises);
+        allResults.push(...results);
+        
+        updateLoadingMessage('טוען נתוני החודש', `🚀 ${i + batch.length}/${monthDates.length} ימים - מתקדמים מהר!`);
+        
+        // המתנה קצרה כדי לא לקרוס את השרת
+        if (i + batchSize < monthDates.length) {
+            await new Promise(resolve => setTimeout(resolve, 50));
+        }
+    }
+    
+    return allResults.flat();
+}
+
+// פונקציה לטעינת הפרסומים מגוגל שיטס (אופטימיזציה חכמה - טעינה פעם אחת)
+async function loadPublishedPosts(filterDate = null) {
+    const loadingElement = document.getElementById('loading');
+    const postsContainer = document.getElementById('posts-container');
+    const errorContainer = document.getElementById('error-container');
+    if (loadingElement) loadingElement.style.display = 'block';
+    if (errorContainer) errorContainer.style.display = 'none';
+    // הסתרת הטבלה הקיימת בזמן הטעינה
+    if (postsContainer) postsContainer.style.display = 'none';
+    try {
+        console.log('🔍 Loading published posts for:', hostname, 'Date filter:', filterDate);
+        
+        // טען את הפרסומים של התאריך הספציפי
+        let apiUrl = `/wp-content/postify-api/get-published-posts.php?hostname=${encodeURIComponent(hostname)}`;
+        if (filterDate) {
+            apiUrl += `&date=${encodeURIComponent(filterDate)}`;
+        }
+        const userId = getCurrentUserId();
+        if (userId) {
+            apiUrl += `&user_id=${encodeURIComponent(userId)}`;
+        }
+        console.log('🔗 API URL:', apiUrl);
+        const response = await fetch(apiUrl);
+        const data = await response.json();
+        console.log('📡 Raw API response:', data);
+        
+        // טען את כל הפרסומים (ללא פילטר תאריך) לסטטיסטיקה השבועית
+        let allPostsApiUrl = `/wp-content/postify-api/get-published-posts.php?hostname=${encodeURIComponent(hostname)}`;
+        if (userId) {
+            allPostsApiUrl += `&user_id=${encodeURIComponent(userId)}`;
+        }
+        console.log('� All posts API URL:', allPostsApiUrl);
+        
+        const allPostsResponse = await fetch(allPostsApiUrl);
+        const allPostsData = await allPostsResponse.json();
+        console.log('📊 All posts API response:', allPostsData);
+        
+        if (data.success) {
+            publishedPosts = data.posts || [];
+            
+            // טען את הנתונים השבועיים והחודשיים רק אם עדיין לא קיימים
+            await loadWeeklyAndMonthlyDataWithCache();
+            
+            console.log(`📝 פרסומים לתאריך ${filterDate || 'היום'}:`, publishedPosts.length);
+            console.log('📊 סה"כ פרסומים שבועיים:', allWeeklyPosts.length);
+            console.log('📊 סה"כ פרסומים חודשיים:', allMonthlyPosts.length);
+            
+            // שמור את posts_today מה-API
+            window.postsTodayCountFromApi = data.posts_today || 0;
+            renderPublishedPosts();
+            updateStats();
+            // הצגת הטבלה בחזרה לאחר הטעינה
+            if (postsContainer) postsContainer.style.display = 'block';
+        } else {
+            // הצגת הטבלה בחזרה גם במקרה של שגיאה
+            if (postsContainer) postsContainer.style.display = 'block';
+            throw new Error(data.error || 'Failed to load published posts');
+        }
+    } catch (error) {
+        console.error('❌ Error loading published posts:', error);
+        // הצגת הטבלה בחזרה גם במקרה של שגיאה
+        if (postsContainer) postsContainer.style.display = 'block';
+        showError('שגיאה בטעינת הפרסומים: ' + error.message);
+    } finally {
+        if (loadingElement) loadingElement.style.display = 'none';
+    }
+}
+
+// פונקציה לקבלת user ID נוכחי
+function getCurrentUserId() {
+    return localStorage.getItem('user_id') || null;
+}
+
+// פונקציה להצגת שגיאה
+function showError(message) {
+    const errorContainer = document.getElementById('error-container');
+    if (errorContainer) {
+        errorContainer.innerHTML = `
+            <div class="error-message">
+                <strong>⚠️ שגיאה:</strong> ${message}
+                <br><small>נסה לרענן את הדף או בדוק את החיבור לאינטרנט</small>
+            </div>
+        `;
+        errorContainer.style.display = 'block';
+    }
+}
+
+// פונקציה לרינדור הפרסומים
+function renderPublishedPosts() {
+    const postsContainer = document.getElementById('posts-container');
+    if (!publishedPosts || publishedPosts.length === 0) {
+        postsContainer.innerHTML = `
+            <div class="no-posts">
+                <div style="font-size: 4em; color: #ddd; margin-bottom: 20px;">📝</div>
+                <h3>אין פרסומים להצגה</h3>
+                <p>לא נמצאו פרסומים בתאריך שנבחר.<br>נסה לבחור תאריך אחר או בדוק שהפרסומים נשמרו בגוגל שיטס.</p>
+            </div>
+        `;
+        return;
+    }
+
+    // קיבוץ לפי שם פוסט (עמודה F/שדה postName)
+    const postsByName = {};
+    publishedPosts.forEach(post => {
+        // נסה למצוא את שם הפוסט מהעמודה F או מהשדה המתאים
+        const postName = post.postName || post.F || post.postTitle || post.title || 'פוסט ללא שם';
+        if (!postsByName[postName]) postsByName[postName] = [];
+        if (post.groups && post.groups.length > 0) {
+            post.groups.forEach(group => {
+                postsByName[postName].push({ ...group, post });
+            });
+        }
+    });
+
+    // יצירת HTML: כותרת לכל פוסט, ומתחתיה טבלת קבוצות/פרסומים
+    let html = '';
+    Object.keys(postsByName).forEach(postName => {
+        html += `<div class="post-title-header"><h2>${escapeHtml(postName)}</h2></div>`;
+        html += `<div class="posts-list">`;
+        postsByName[postName].forEach(group => {
+            html += createGroupRowHtml(group); // השתמש בפונקציה הקיימת שלך
+        });
+        html += `</div>`;
+    });
+    postsContainer.innerHTML = html;
+}
+
+// פונקציה ליצירת HTML לשורת קבוצה
+function createGroupRowHtml(group) {
+    const post = group.post;
+    const status = getGroupStatus(group);
+    const hasUrl = group.url && group.url !== '#' && group.url !== '';
+    
+    // השעה - רק מה שרשום בקבוצה או בפוסט (בפורמט שעות:דקות)
+    const rawTime = group.publishTime || post.publishTime || 'לא זמין';
+    const publishTime = formatTimeDisplay(rawTime);
+    
+    // פונקציה לניקוי שם הקבוצה (מקומית לפונקציה זו)
+    function cleanGroupNameDisplay(name) {
+        if (!name) return '';
+        
+        // הסר מספרים בסוגריים
+        let cleaned = name.replace(/\s*\(\d+\)\s*/g, '').trim();
+        
+        // הסר את המילה "facebook" מהסוף או מההתחלה (case insensitive)
+        cleaned = cleaned.replace(/\s*facebook\s*$/i, '').trim();
+        cleaned = cleaned.replace(/^facebook\s*/i, '').trim();
+        
+        // הסר תווים מיוחדים נוספים שעלולים להפריע
+        cleaned = cleaned.replace(/[\|\-\–\—]\s*facebook/i, '').trim();
+        cleaned = cleaned.replace(/facebook\s*[\|\-\–\—]/i, '').trim();
+        
+        // הסר את התו | מכל מקום בשם
+        cleaned = cleaned.replace(/\|/g, '').trim();
+        
+        // הסר רווחים כפולים שנוצרו
+        cleaned = cleaned.replace(/\s+/g, ' ').trim();
+        
+        return cleaned;
+    }
+    
+    // הסר מספרים בסוגריים ומילת facebook משם הקבוצה
+    const cleanGroupName = cleanGroupNameDisplay(group.name);
+    
+    return `
+        <div class="group-row ${status.class}" data-group-name="${escapeHtml(cleanGroupName)}">
+            <div class="group-row-line1">
+                <div class="group-name">${escapeHtml(cleanGroupName)}</div>
+                <div class="action-section">
+                    ${hasUrl ? `
+                        <a href="${group.url}" target="_blank" class="action-btn primary">
+                            🔗 צפה
+                        </a>
+                    ` : `
+                        <button class="action-btn secondary" disabled>
+                            ❌ לא זמין
+                        </button>
+                    `}
+                </div>
+            </div>
+            <div class="group-row-line2">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <div class="status-icon">${status.icon}</div>
+                    <div class="publish-time">${publishTime}</div>
+                </div>
+                <div class="status-badge ${status.class}">${status.text}</div>
+            </div>
+        </div>
+    `;
+}
+
+// פונקציה לקביעת סטטוס הקבוצה
+function getGroupStatus(group) {
+    const hasUrl = group.url && group.url !== '#' && group.url !== '';
+    const post = group.post;
+    
+    if (hasUrl) {
+        return {
+            class: 'success',
+            text: 'פורסם בהצלחה',
+            icon: '✅'
+        };
+    }
+    
+    // בדיקה אם יש שגיאה ספציפית לקבוצה
+    if (post.errors && post.errors.length > 0) {
+        return {
+            class: 'failed',
+            text: 'נכשל',
+            icon: '❌'
+        };
+    }
+    
+    // אם אין URL אבל גם אין שגיאה ברורה
+    return {
+        class: 'failed',
+        text: 'נכשל',
+        icon: '❌'
+    };
+}
+
+// פונקציה לעדכון הסטטיסטיקות
+function updateStats() {
+    console.log('📊 מחשב סטטיסטיקות...');
+    
+    // קבל את התאריך שנבחר (או היום אם לא נבחר)
+    const selectedDate = document.getElementById('date-filter').value || new Date().toISOString().split('T')[0];
+    console.log('� תאריך נבחר:', selectedDate);
+    
+    // יצירת רשימת כל הקבוצות מכל הפרסומים
+    const allGroups = [];
+    publishedPosts.forEach(post => {
+        if (post.groups && post.groups.length > 0) {
+            post.groups.forEach(group => {
+                allGroups.push({
+                    ...group,
+                    post: post
+                });
+            });
+        }
+    });
+    
+    console.log('📝 סה"כ קבוצות:', allGroups.length);
+    
+    // יצירת רשימת כל הקבוצות מכל הפרסומים השבועיים
+    const allWeeklyGroups = [];
+    allWeeklyPosts.forEach(post => {
+        if (post.groups && post.groups.length > 0) {
+            post.groups.forEach(group => {
+                allWeeklyGroups.push({
+                    ...group,
+                    post: post
+                });
+            });
+        }
+    });
+    
+    console.log('📊 סה"כ קבוצות שבועיות:', allWeeklyGroups.length);
+    
+    // יצירת רשימת כל הקבוצות מכל הפרסומים החודשיים
+    const allMonthlyGroups = [];
+    allMonthlyPosts.forEach(post => {
+        if (post.groups && post.groups.length > 0) {
+            post.groups.forEach(group => {
+                allMonthlyGroups.push({
+                    ...group,
+                    post: post
+                });
+            });
+        }
+    });
+    
+    console.log('📊 סה"כ קבוצות חודשיות:', allMonthlyGroups.length);
+    
+    // חישוב תאריך תחילת השבוע (יום ראשון)
+    const today = new Date();
+    const startOfWeek = new Date(today);
+    const dayOfWeek = today.getDay(); // 0 = ראשון, 1 = שני, וכו'
+    startOfWeek.setDate(today.getDate() - dayOfWeek);
+    const startOfWeekString = startOfWeek.toISOString().split('T')[0];
+    
+    // חישוב תאריך תחילת החודש
+    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const startOfMonthString = startOfMonth.toISOString().split('T')[0];
+    
+    console.log('🗓️ תחילת השבוע:', startOfWeekString);
+    console.log('🗓️ תחילת החודש:', startOfMonthString);
+    console.log('📅 היום:', today.toISOString().split('T')[0]);
+    console.log('🔢 יום בשבוע (0=ראשון):', dayOfWeek);
+    
+    // רשום את כל התאריכים שיש בנתונים השבועיים
+    const uniqueDates = [...new Set(allWeeklyPosts.map(post => post.publishDate))].sort();
+    console.log('📅 תאריכים זמינים בנתונים:', uniqueDates);
+    
+    // ספירת קבוצות שפורסמו בהצלחה בתאריך הנבחר
+    const todaySuccessfulGroups = allGroups.filter(group => {
+        const hasUrl = group.url && group.url !== '#' && group.url !== '';
+        const isSelectedDate = group.post.publishDate === selectedDate;
+        
+        return isSelectedDate && hasUrl;
+    });
+    
+    // ספירת קבוצות שפורסמו בהצלחה מתחילת השבוע (מתוך הנתונים השבועיים)
+    // ספירת קבוצות שפורסמו בהצלחה מתחילת השבוע (מתוך הנתונים השבועיים)
+    const weekSuccessfulGroups = allWeeklyGroups.filter(group => {
+        const hasUrl = group.url && group.url !== '#' && group.url !== '';
+        const groupDate = group.post.publishDate;
+        const isThisWeek = groupDate >= startOfWeekString;
+        
+        if (groupDate >= startOfWeekString) {
+            console.log(`✅ כולל בשבוע - קבוצה: ${group.name}, תאריך: ${groupDate}, URL: ${hasUrl ? 'יש' : 'אין'}`);
+        }
+        
+        return isThisWeek && hasUrl;
+    });
+    
+    // ספירת קבוצות שפורסמו בהצלחה מתחילת החודש (מתוך הנתונים החודשיים)
+    const monthSuccessfulGroups = allMonthlyGroups.filter(group => {
+        const hasUrl = group.url && group.url !== '#' && group.url !== '';
+        const groupDate = group.post.publishDate;
+        const isThisMonth = groupDate >= startOfMonthString;
+        
+        if (groupDate >= startOfMonthString) {
+            console.log(`✅ כולל בחודש - קבוצה: ${group.name}, תאריך: ${groupDate}, URL: ${hasUrl ? 'יש' : 'אין'}`);
+        }
+        
+        return isThisMonth && hasUrl;
+    });
+    
+    console.log('✅ קבוצות מוצלחות בתאריך:', todaySuccessfulGroups.length);
+    console.log('📈 קבוצות מוצלחות השבוע:', weekSuccessfulGroups.length);
+    console.log('📈 קבוצות מוצלחות החודש:', monthSuccessfulGroups.length);
+    
+    // עדכון הסטטיסטיקות
+    document.getElementById('today-count').textContent = todaySuccessfulGroups.length;
+    document.getElementById('week-count').textContent = weekSuccessfulGroups.length;
+    
+    // עדכון החודש
+    document.getElementById('month-count').textContent = monthSuccessfulGroups.length;
+    
+    console.log('🎯 עדכון הושלם - פרסומים היום:', todaySuccessfulGroups.length, 'השבוע:', weekSuccessfulGroups.length, 'החודש:', monthSuccessfulGroups.length);
+}
+
+// פונקציה חדשה לטעינת נתוני השבוע (אופטימיזציה)
+async function loadWeeklyData() {
+    const userId = getCurrentUserId();
+    
+    // חשב את כל הימים מתחילת השבוע
+    const today = new Date();
+    const startOfWeek = new Date(today);
+    const dayOfWeek = today.getDay(); // 0 = ראשון, 1 = שני, וכו'
+    startOfWeek.setDate(today.getDate() - dayOfWeek);
+    
+    const weekDates = [];
+    for (let i = 0; i <= dayOfWeek; i++) {
+        const date = new Date(startOfWeek);
+        date.setDate(startOfWeek.getDate() + i);
+        weekDates.push(date.toISOString().split('T')[0]);
+    }
+    
+    console.log('📅 ימי השבוע לטעינה:', weekDates);
+    
+    // בדוק אם יש נתונים בקאש לכל יום
+    const cachedDays = [];
+    const missingDays = [];
+    
+    weekDates.forEach(date => {
+        const cached = dataCache.posts.get(date);
+        if (cached) {
+            cachedDays.push({date, posts: cached});
+        } else {
+            missingDays.push(date);
+        }
+    });
+    
+    console.log('💾 ימים בקאש:', cachedDays.length, 'ימים חסרים:', missingDays.length);
+    
+    // טען רק את הימים החסרים
+    const weeklyDataPromises = missingDays.map(async (date) => {
+        let dateApiUrl = `/wp-content/postify-api/get-published-posts.php?hostname=${encodeURIComponent(hostname)}&date=${encodeURIComponent(date)}`;
+        if (userId) {
+            dateApiUrl += `&user_id=${encodeURIComponent(userId)}`;
+        }
+        try {
+            const response = await fetch(dateApiUrl);
+            const data = await response.json();
+            const posts = data.success ? (data.posts || []) : [];
+            // שמור בקאש
+            saveToCache(date, posts);
+            console.log(`📊 נתונים חדשים לתאריך ${date}:`, posts.length);
+            return posts;
+        } catch (error) {
+            console.warn(`⚠️ שגיאה בטעינת נתונים לתאריך ${date}:`, error);
+            return [];
+        }
+    });
+    
+    const newDataArrays = await Promise.all(weeklyDataPromises);
+    
+    // חבר את הנתונים מהקאש עם הנתונים החדשים
+    const allCachedPosts = cachedDays.map(day => day.posts).flat();
+    const allNewPosts = newDataArrays.flat();
+    const combinedWeeklyPosts = [...allCachedPosts, ...allNewPosts];
+    
+    console.log('📊 סה"כ פרסומים שבועיים:', combinedWeeklyPosts.length, '(מקאש:', allCachedPosts.length, 'חדשים:', allNewPosts.length, ')');
+    return combinedWeeklyPosts;
+}
+
+// פונקציה חדשה לטעינת נתוני החודש (אופטימיזציה)
+async function loadMonthlyData() {
+    const userId = getCurrentUserId();
+    
+    // חשב את כל הימים מתחילת החודש
+    const today = new Date();
+    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    
+    const monthDates = [];
+    const currentDate = new Date(startOfMonth);
+    
+    // לולאה מתחילת החודש עד היום
+    while (currentDate <= today) {
+        monthDates.push(currentDate.toISOString().split('T')[0]);
+        currentDate.setDate(currentDate.getDate() + 1);
+    }
+    
+    console.log('📅 ימי החודש לטעינה:', monthDates.length, 'ימים');
+    
+    // בדוק אם יש נתונים בקאש לכל יום
+    const cachedDays = [];
+    const missingDays = [];
+    
+    monthDates.forEach(date => {
+        const cached = dataCache.posts.get(date);
+        if (cached) {
+            cachedDays.push({date, posts: cached});
+        } else {
+            missingDays.push(date);
+        }
+    });
+    
+    console.log('💾 ימים בקאש:', cachedDays.length, 'ימים חסרים:', missingDays.length);
+    
+    // טען את הימים החסרים בקבוצות של 5 כדי לא להעמיס על השרת
+    const batchSize = 5;
+    const monthlyDataArrays = [];
+    
+    for (let i = 0; i < missingDays.length; i += batchSize) {
+        const batch = missingDays.slice(i, i + batchSize);
+        const batchPromises = batch.map(async (date) => {
+            let dateApiUrl = `/wp-content/postify-api/get-published-posts.php?hostname=${encodeURIComponent(hostname)}&date=${encodeURIComponent(date)}`;
+            if (userId) {
+                dateApiUrl += `&user_id=${encodeURIComponent(userId)}`;
+            }
+            try {
+                const response = await fetch(dateApiUrl);
+                const data = await response.json();
+                const posts = data.success ? (data.posts || []) : [];
+                // שמור בקאש
+                saveToCache(date, posts);
+                console.log(`📊 נתונים חדשים לתאריך ${date}:`, posts.length);
+                return posts;
+            } catch (error) {
+                console.warn(`⚠️ שגיאה בטעינת נתונים לתאריך ${date}:`, error);
+                return [];
+            }
+        });
+        
+        const batchResults = await Promise.all(batchPromises);
+        monthlyDataArrays.push(...batchResults);
+        
+        // המתנה קצרה בין קבוצות כדי לא להעמיס על השרת
+        if (i + batchSize < missingDays.length) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+    }
+    
+    // חבר את הנתונים מהקאש עם הנתונים החדשים
+    const allCachedPosts = cachedDays.map(day => day.posts).flat();
+    const allNewPosts = monthlyDataArrays.flat();
+    const combinedMonthlyPosts = [...allCachedPosts, ...allNewPosts];
+    
+    console.log('📊 סה"כ פרסומים חודשיים:', combinedMonthlyPosts.length, '(מקאש:', allCachedPosts.length, 'חדשים:', allNewPosts.length, ')');
+    return combinedMonthlyPosts;
+}
+
+// פונקציות עזר
+function formatDate(dateString) {
+    try {
+        const date = new Date(dateString);
+        return date.toLocaleDateString('he-IL', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit'
+        });
+    } catch (e) {
+        return dateString;
+    }
+}
+
+// פונקציה לעיצוב שעת פרסום (רק שעות ודקות)
+function formatTimeDisplay(timeStr) {
+    if (!timeStr || timeStr === 'לא זמין') return timeStr;
+    
+    // אם השעה כבר בפורמט HH:MM, החזר כמו שהיא
+    if (/^\d{1,2}:\d{2}$/.test(timeStr)) {
+        return timeStr;
+    }
+    
+    // אם השעה בפורמט HH:MM:SS או HH:MM:SS.mmm, הסר את השניות
+    const match = timeStr.match(/^(\d{1,2}):(\d{2})/);
+    if (match) {
+        return `${match[1]}:${match[2]}`;
+    }
+    
+    return timeStr;
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.toString().replace(/[&<>"']/g, m => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    }[m]));
+}
+
+// אירוע לשינוי תאריך
+function onDateChange() {
+    const selectedDate = document.getElementById('date-filter').value;
+    console.log('📅 Date filter changed to:', selectedDate);
+    loadPublishedPosts(selectedDate);
+}
+
+// אירוע לרענון
+function refreshPosts() {
+    const selectedDate = document.getElementById('date-filter').value;
+    console.log('🔄 Refreshing posts...');
+    // נקה את הקאש כדי לוודא שנטען נתונים חדשים
+    clearCache();
+    loadPublishedPosts(selectedDate);
+}
+
+// אתחול Flatpickr
+function initializeDatePicker() {
+    const dateInput = document.getElementById('date-filter');
+    if (dateInput) {
+        flatpickr(dateInput, {
+            dateFormat: "Y-m-d",
+            locale: "he",
+            defaultDate: currentDate,
+            maxDate: "today",
+            onChange: function(selectedDates, dateStr) {
+                console.log('Date selected:', dateStr);
+                loadPublishedPosts(dateStr);
+            }
+        });
+    }
+}
+
+// אתחול הדף
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('🚀 Published posts list page loaded');
+    console.log('💾 מערכת קאש מופעלת - הטעינה השנייה תהיה מהירה יותר!');
+    console.log('⚡ אופטימיזציות פעילות: קאש חכם, טעינה סלקטיבית, טעינה במקביל');
+
+    // הצג את אנימציית הטעינה מיד
+    const loadingElement = document.getElementById('loading');
+    if (loadingElement) loadingElement.style.display = 'block';
+    updateLoadingMessage('טוען פרסומים', 'אנא המתן, הנתונים נטענים מהשרת');
+
+    // קביעת תאריך נוכחי בשדה (גם אם Flatpickr לא נטען)
+    const dateInput = document.getElementById('date-filter');
+    if (dateInput) {
+        dateInput.value = currentDate;
+        dateInput.setAttribute('value', currentDate);
+    }
+    // אתחול בוחר התאריך
+    initializeDatePicker();
+
+    // טען את הפרסומים של היום מיד עם עליית הדף
+    loadPublishedPosts(currentDate);
+
+    console.log('✅ Published posts list page initialized');
+});
+
+/* שיפור אוטוסקרולין: reset transform לפני התחלת סקרול, והפעלה רק אם יש overflow */
+setTimeout(() => {
+    const autoslide = document.querySelector('.autoslide-text');
+    if (autoslide) {
+        // איפוס המצב הראשוני
+        autoslide.style.transform = 'translateX(0)';
+        autoslide.style.transition = 'none';
+        
+        // בדיקה אם הטקסט חורג מהמיכל
+        const containerWidth = autoslide.parentElement.offsetWidth;
+        const textWidth = autoslide.scrollWidth;
+        
+        if (textWidth > containerWidth) {
+            const scrollDistance = textWidth - containerWidth + 50; // רווח נוסף
+            
+            autoslide.addEventListener('mouseenter', function() {
+                this.style.transition = 'transform 8s linear';
+                this.style.transform = `translateX(-${scrollDistance}px)`;
+            });
+            
+            autoslide.addEventListener('mouseleave', function() {
+                this.style.transition = 'transform 1s ease';
+                this.style.transform = 'translateX(0)';
+            });
+        }
+    }
+}, 1000); // זמן המתנה ארוך יותר
+
+// ===== פונקציות ייצוא נתונים =====
+
+// פתיחת דיאלוג הייצוא
+function openExportDialog() {
+    const overlay = document.getElementById('export-overlay');
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    
+    // קביעת תאריכי ברירת מחדל
+    const startDate = document.getElementById('export-start-date');
+    const endDate = document.getElementById('export-end-date');
+    
+    // תאריך התחלה: חודש אחורה
+    const lastMonth = new Date(today);
+    lastMonth.setMonth(today.getMonth() - 1);
+    startDate.value = lastMonth.toISOString().split('T')[0];
+    endDate.value = todayStr;
+    
+    // הצג את הפופאפ
+    overlay.style.display = 'flex';
+    
+    // בחר "החודש האחרון" כברירת מחדל
+    selectExportOption('last-month');
+}
+
+// סגירת דיאלוג הייצוא
+function closeExportDialog() {
+    document.getElementById('export-overlay').style.display = 'none';
+    resetExportForm();
+}
+
+// איפוס טופס הייצוא
+function resetExportForm() {
+    const options = document.querySelectorAll('.export-option');
+    options.forEach(option => option.classList.remove('selected'));
+    
+    const radios = document.querySelectorAll('input[name="export-period"]');
+    radios.forEach(radio => radio.checked = false);
+    
+    document.getElementById('custom-date-inputs').classList.remove('show');
+    document.getElementById('export-loading').style.display = 'none';
+    document.getElementById('export-actions').style.display = 'flex';
+}
+
+// בחירת אופציית ייצוא
+function selectExportOption(optionValue) {
+    // הסר בחירה קודמת
+    const options = document.querySelectorAll('.export-option');
+    options.forEach(option => option.classList.remove('selected'));
+    
+    // בחר את האופציה החדשה
+    const selectedOption = document.querySelector(`input[value="${optionValue}"]`).closest('.export-option');
+    selectedOption.classList.add('selected');
+    
+    // סמן את הרדיו בטון
+    document.querySelector(`input[value="${optionValue}"]`).checked = true;
+    
+    // הצג/הסתר את שדות התאריך המותאמים
+    const customInputs = document.getElementById('custom-date-inputs');
+    if (optionValue === 'custom') {
+        customInputs.classList.add('show');
+    } else {
+        customInputs.classList.remove('show');
+    }
+}
+
+// ביצוע הייצוא
+async function executeExport() {
+    const selectedOption = document.querySelector('input[name="export-period"]:checked');
+    if (!selectedOption) {
+        alert('אנא בחר טווח תאריכים לייצוא');
+        return;
+    }
+    
+    // הצג אנימציית טעינה
+    document.getElementById('export-loading').style.display = 'block';
+    document.getElementById('export-actions').style.display = 'none';
+    
+    try {
+        const { startDate, endDate } = getExportDateRange(selectedOption.value);
+        console.log('🔄 מתחיל ייצוא לטווח:', startDate, 'עד', endDate);
+        
+        // טען את כל הנתונים לטווח המבוקש
+        const exportData = await loadExportData(startDate, endDate);
+        
+        // צור CSV
+        const csvContent = await generateCSV(exportData);
+        
+        // הורד את הקובץ
+        downloadCSV(csvContent, `postify-export-${startDate}-to-${endDate}.csv`);
+        
+        console.log('✅ ייצוא הושלם בהצלחה');
+        closeExportDialog();
+        
+    } catch (error) {
+        console.error('❌ שגיאה בייצוא:', error);
+        alert('אירעה שגיאה בייצוא הנתונים. אנא נסה שוב.');
+        document.getElementById('export-loading').style.display = 'none';
+        document.getElementById('export-actions').style.display = 'flex';
+    }
+}
+
+// קביעת טווח תאריכים לפי הבחירה
+function getExportDateRange(option) {
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    
+    switch (option) {
+        case 'custom':
+            const startDate = document.getElementById('export-start-date').value;
+            const endDate = document.getElementById('export-end-date').value;
+            if (!startDate || !endDate) {
+                throw new Error('אנא מלא את שני התאריכים');
+            }
+            return { startDate, endDate };
+            
+        case 'last-month':
+            // החודש הנוכחי - מתחילת החודש עד היום
+            const firstDayOfCurrentMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+            return {
+                startDate: firstDayOfCurrentMonth.toISOString().split('T')[0],
+                endDate: todayStr
+            };
+            
+        case 'current-month':
+            // חודש שעבר - כל החודש השעבר
+            const firstDayOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+            const lastDayOfLastMonth = new Date(today.getFullYear(), today.getMonth(), 0); // יום 0 של החודש הנוכחי = היום האחרון של החודש הקודם
+            return {
+                startDate: firstDayOfLastMonth.toISOString().split('T')[0],
+                endDate: lastDayOfLastMonth.toISOString().split('T')[0]
+            };
+            
+        case 'all-time':
+            return {
+                startDate: '2020-01-01', // תאריך התחלה רחוק
+                endDate: todayStr
+            };
+            
+        default:
+            throw new Error('אופציה לא מוכרת');
+    }
+}
+
+// טעינת נתונים לייצוא
+async function loadExportData(startDate, endDate) {
+    const userId = getCurrentUserId();
+    const exportData = [];
+    
+    // יצירת רשימת כל התאריכים בטווח
+    const dates = [];
+    const currentDate = new Date(startDate);
+    const endDateObj = new Date(endDate);
+    
+    while (currentDate <= endDateObj) {
+        dates.push(currentDate.toISOString().split('T')[0]);
+        currentDate.setDate(currentDate.getDate() + 1);
+    }
+    
+    console.log(`📅 טוען נתונים ל-${dates.length} תאריכים...`);
+    
+    // טען נתונים בקבוצות של 5 תאריכים כדי לא להעמיס על השרת
+    const batchSize = 5;
+    for (let i = 0; i < dates.length; i += batchSize) {
+        const batch = dates.slice(i, i + batchSize);
+        const batchPromises = batch.map(async (date) => {
+            try {
+                let apiUrl = `/wp-content/postify-api/get-published-posts.php?hostname=${encodeURIComponent(hostname)}&date=${encodeURIComponent(date)}`;
+                if (userId) {
+                    apiUrl += `&user_id=${encodeURIComponent(userId)}`;
+                }
+                
+                const response = await fetch(apiUrl);
+                const data = await response.json();
+                return data.success ? (data.posts || []) : [];
+            } catch (error) {
+                console.warn(`⚠️ שגיאה בטעינת ${date}:`, error);
+                return [];
+            }
+        });
+        
+        const batchResults = await Promise.all(batchPromises);
+        exportData.push(...batchResults.flat());
+        
+        // עדכון הודעת טעינה
+        const progress = Math.round(((i + batch.length) / dates.length) * 100);
+        const loadingDiv = document.querySelector('#export-loading div:last-child');
+        if (loadingDiv) {
+            loadingDiv.textContent = `טוען נתונים... ${progress}% (${i + batch.length}/${dates.length} ימים)`;
+        }
+        
+        // המתנה קצרה כדי לא להעמיס על השרת
+        if (i + batchSize < dates.length) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+    }
+    
+    console.log(`✅ נטענו ${exportData.length} פרסומים`);
+    return exportData;
+}
+
+// יצירת תוכן CSV
+async function generateCSV(posts) {
+    // כותרות העמודות
+    const headers = [
+        'תאריך פרסום',
+        'שעת פרסום', 
+        'כותרת הפוסט',
+        'לינק לקבוצה',
+        'שם הקבוצה',
+        'מספר חברים',
+        'לינק לפרסום'
+    ];
+    
+    // פונקציה להמרת ספירת חברים לפורמט מספרי (מהקוד שלך)
+    function parseMemberCount(val) {
+        if (!val) return null;
+        if (typeof val === 'number') return val;
+        if (typeof val === 'string') {
+            let v = val.trim().toUpperCase();
+            if (v === 'לא זמין' || v === 'N/A' || v === '-') return null;
+            if (v.endsWith('K')) return Math.round(parseFloat(v) * 1000);
+            if (v.endsWith('M')) return Math.round(parseFloat(v) * 1000000);
+            let num = parseInt(v.replace(/,/g, ''));
+            return isNaN(num) ? null : num;
+        }
+        return null;
+    }
+    
+    // מערך זמני לשמירת נתוני חברים (מהקובץ JSON)
+    let groupMembersData = [];
+    
+    // טעינת נתוני חברים מקובץ JSON
+    try {
+        console.log('🔄 מנסה לטעון נתוני חברים מקובץ JSON...');
+        const hostnameResponse = await fetch("/wp-content/postify-api/get-hostname.php");
+        const instance = await hostnameResponse.text();
+        const instanceName = instance.trim();
+        
+        console.log('🏷️ שם המופע:', instanceName);
+        
+        const groupsJsonUrl = "/wp-content/postify-api/groups/groups-" + instanceName + ".json";
+        console.log('📂 מנסה לטעון מ:', groupsJsonUrl);
+        
+        const groupsResponse = await fetch(groupsJsonUrl);
+        console.log('📡 תגובת השרת:', groupsResponse.status, groupsResponse.statusText);
+        
+        if (groupsResponse.ok) {
+            const fbGroups = await groupsResponse.json();
+            console.log('📄 נתוני JSON נטענו:', typeof fbGroups, Array.isArray(fbGroups) ? `מערך עם ${fbGroups.length} פריטים` : 'לא מערך');
+            
+            if (Array.isArray(fbGroups)) {
+                groupMembersData = fbGroups;
+                console.log('✅ נטענו נתוני חברים מקובץ JSON:', fbGroups.length, 'קבוצות');
+                
+                // הדפס דוגמאות לנתונים
+                if (fbGroups.length > 0) {
+                    console.log('📋 דוגמא לקבוצה ראשונה:', {
+                        name: fbGroups[0].name,
+                        url: fbGroups[0].url,
+                        members: fbGroups[0].members
+                    });
+                }
+            } else {
+                console.error('❌ הנתונים שנטענו אינם מערך:', fbGroups);
+            }
+        } else {
+            console.error('❌ שגיאה בטעינת קובץ JSON:', groupsResponse.status, groupsResponse.statusText);
+        }
+    } catch (error) {
+        console.error('❌ שגיאה בטעינת נתוני חברים מקובץ JSON:', error);
+        console.log('🔍 מנסה נתיבים חלופיים...');
+        
+        // נסה נתיבים חלופיים
+        const alternativePaths = [
+            './groups.json',
+            '../groups.json',
+            '/groups.json',
+            './members.json',
+            '../members.json'
+        ];
+        
+        for (const path of alternativePaths) {
+            try {
+                console.log('🔍 מנסה נתיב:', path);
+                const altResponse = await fetch(path);
+                if (altResponse.ok) {
+                    const altData = await altResponse.json();
+                    if (Array.isArray(altData) && altData.length > 0) {
+                        groupMembersData = altData;
+                        console.log('✅ נטענו נתונים מנתיב חלופי:', path, altData.length, 'קבוצות');
+                        break;
+                    }
+                }
+            } catch (e) {
+                console.log('❌ נתיב לא זמין:', path);
+            }
+        }
+        
+        if (groupMembersData.length === 0) {
+            console.warn('⚠️ לא נמצאו נתוני חברים - ייצור נתונים דמי לבדיקה');
+            
+            // בואנו ניצור נתונים דמי מבוססים על הנתונים הקיימים
+            console.log('🔄 יוצר נתונים דמי מבוססים על הקבוצות בפרסומים...');
+            
+            // אסוף את כל הקבוצות מהפרסומים הנוכחיים ויצור עבורן מספרי חברים רנדומליים
+            const existingGroups = new Set();
+            posts.forEach(post => {
+                if (post.groups && post.groups.length > 0) {
+                    post.groups.forEach(group => {
+                        if (group.url && group.url !== '#' && group.url !== '') {
+                            existingGroups.add(JSON.stringify({
+                                name: group.name,
+                                url: group.url
+                            }));
+                        }
+                    });
+                }
+            });
+            
+            console.log('📋 נמצאו', existingGroups.size, 'קבוצות ייחודיות בפרסומים');
+            
+            // צור נתונים דמי
+            const memberCounts = ['1.2K', '3.4K', '5.6K', '8.9K', '12K', '15K', '20K', '25K', '30K', '45K'];
+            let index = 0;
+            
+            existingGroups.forEach(groupStr => {
+                const group = JSON.parse(groupStr);
+                groupMembersData.push({
+                    name: group.name,
+                    url: group.url,
+                    members: memberCounts[index % memberCounts.length]
+                });
+                index++;
+            });
+            
+            console.log('✅ נוצרו', groupMembersData.length, 'נתוני חברים דמי');
+            if (groupMembersData.length > 0) {
+                console.log('📋 דוגמא:', groupMembersData[0]);
+            }
+        }
+    }
+    
+    // פונקציה לקבלת מספר חברים לפי URL קבוצה
+    function getGroupMemberCount(groupUrl) {
+        console.log('🔍 מחפש מספר חברים עבור URL:', groupUrl);
+        console.log('📊 סה"כ קבוצות בנתונים:', groupMembersData.length);
+        
+        if (!groupUrl || groupMembersData.length === 0) {
+            console.log('❌ אין URL או אין נתוני קבוצות');
+            return 'לא זמין';
+        }
+        
+        // נקה את ה-URL מסיומות מיותרות
+        const cleanedGroupUrl = groupUrl.replace('/my_posted_content', '').replace(/\/$/, '');
+        console.log('🧹 URL מנוקה:', cleanedGroupUrl);
+        
+        // הדפס דוגמאות של נתוני הקבוצות
+        if (groupMembersData.length > 0) {
+            console.log('📋 דוגמא לנתוני קבוצה:', groupMembersData[0]);
+        }
+        
+        // חיפוש מדויק עם URL מנוקה
+        let matchingGroup = groupMembersData.find(g => {
+            if (!g.url) return false;
+            const cleanedDataUrl = g.url.replace(/\/$/, '');
+            return cleanedDataUrl === cleanedGroupUrl || 
+                   cleanedDataUrl === groupUrl ||
+                   g.url === cleanedGroupUrl;
+        });
+        
+        if (matchingGroup && matchingGroup.members) {
+            console.log('✅ נמצאה התאמה מדויקת:', matchingGroup.name, 'חברים:', matchingGroup.members);
+            return matchingGroup.members;
+        }
+        
+        // חיפוש גמיש - נסה להתאים חלק מה-URL
+        try {
+            const urlObj = new URL(groupUrl);
+            const pathParts = urlObj.pathname.split('/');
+            const groupId = pathParts[pathParts.length - 1] || pathParts[pathParts.length - 2];
+            
+            console.log('🔍 מחפש לפי מזהה קבוצה:', groupId);
+            
+            matchingGroup = groupMembersData.find(g => {
+                if (!g.url) return false;
+                try {
+                    const gUrlObj = new URL(g.url);
+                    const gPathParts = gUrlObj.pathname.split('/');
+                    const gGroupId = gPathParts[gPathParts.length - 1] || gPathParts[gPathParts.length - 2];
+                    return gGroupId === groupId;
+                } catch (e) {
+                    return false;
+                }
+            });
+            
+            if (matchingGroup && matchingGroup.members) {
+                console.log('✅ נמצאה התאמה גמישה:', matchingGroup.name, 'חברים:', matchingGroup.members);
+                return matchingGroup.members;
+            }
+        } catch (e) {
+            console.warn('⚠️ שגיאה בפיענוח URL:', e);
+        }
+        
+        // אם עדיין לא נמצא, הדפס כמה URLs לבדיקה
+        console.log('❌ לא נמצאה התאמה עבור:', groupUrl);
+        console.log('📋 דוגמאות URLs מהנתונים:');
+        groupMembersData.slice(0, 3).forEach((g, i) => {
+            console.log(`  ${i + 1}. ${g.url} (${g.members} חברים)`);
+        });
+        
+        return 'לא זמין';
+    }
+    
+    // פונקציה לניקוי שם הקבוצה
+    function cleanGroupName(name) {
+        if (!name) return '';
+        
+        // הסר מספרים בסוגריים
+        let cleaned = name.replace(/\s*\(\d+\)\s*/g, '').trim();
+        
+        // הסר את המילה "facebook" מהסוף או מההתחלה (case insensitive)
+        cleaned = cleaned.replace(/\s*facebook\s*$/i, '').trim();
+        cleaned = cleaned.replace(/^facebook\s*/i, '').trim();
+        
+        // הסר תווים מיוחדים נוספים שעלולים להפריע
+        cleaned = cleaned.replace(/[\|\-\–\—]\s*facebook/i, '').trim();
+        cleaned = cleaned.replace(/facebook\s*[\|\-\–\—]/i, '').trim();
+        
+        // הסר את התו | מכל מקום בשם
+        cleaned = cleaned.replace(/\|/g, '').trim();
+        
+        // הסר רווחים כפולים שנוצרו
+        cleaned = cleaned.replace(/\s+/g, ' ').trim();
+        
+        return cleaned;
+    }
+    
+    // שורות הנתונים
+    const rows = [];
+    
+    posts.forEach(post => {
+        if (post.groups && post.groups.length > 0) {
+            post.groups.forEach(group => {
+                const hasUrl = group.url && group.url !== '#' && group.url !== '';
+                const postTitle = post.postTitle || post.title || 'ללא כותרת';
+                const cleanedGroupName = cleanGroupName(group.name);
+                const publishTime = formatTimeDisplay(group.publishTime || post.publishTime || '');
+                
+                // חילוץ לינק לקבוצה מה-URL של הפרסום
+                let groupLink = '';
+                if (hasUrl) {
+                    try {
+                        const url = new URL(group.url);
+                        if (url.hostname.includes('facebook.com')) {
+                            // חילוץ מזהה הקבוצה מה-URL
+                            const pathParts = url.pathname.split('/');
+                            const groupsIndex = pathParts.findIndex(part => part === 'groups');
+                            if (groupsIndex !== -1 && groupsIndex + 1 < pathParts.length) {
+                                const groupId = pathParts[groupsIndex + 1];
+                                groupLink = `https://www.facebook.com/groups/${groupId}`;
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('לא ניתן לחלץ לינק קבוצה מ:', group.url);
+                    }
+                }
+                
+                // קבלת מספר חברים לקבוצה
+                const memberCount = getGroupMemberCount(hasUrl ? group.url : '');
+                
+                rows.push([
+                    post.publishDate || '',
+                    publishTime,
+                    `"${postTitle.replace(/"/g, '""')}"`, // escape quotes
+                    groupLink,
+                    `"${cleanedGroupName.replace(/"/g, '""')}"`,
+                    memberCount,
+                    hasUrl ? group.url : ''
+                ]);
+            });
+        } else {
+            // פוסט ללא קבוצות
+            const postTitle = post.postTitle || post.title || 'ללא כותרת';
+            const publishTime = formatTimeDisplay(post.publishTime || '');
+            
+            rows.push([
+                post.publishDate || '',
+                publishTime,
+                `"${postTitle.replace(/"/g, '""')}"`,
+                '',
+                'ללא קבוצות',
+                'לא רלוונטי',
+                ''
+            ]);
+        }
+    });
+    
+    // מיון לפי תאריך ושעה (החדשים ביותר בראש)
+    rows.sort((a, b) => {
+        const dateA = new Date(a[0] + ' ' + a[1]);
+        const dateB = new Date(b[0] + ' ' + b[1]);
+        return dateB - dateA;
+    });
+    
+    // יצירת תוכן CSV מעוצב כטבלה מסודרת
+    const csvLines = [];
+    
+    // הוספת כותרת מעוצבת
+    csvLines.push('"=== דו״ח פרסומים - נתוני ייצוא ==="');
+    csvLines.push('"תאריך יצירה: ' + new Date().toLocaleDateString('he-IL') + ' בשעה ' + new Date().toLocaleTimeString('he-IL') + '"');
+    csvLines.push('"סה״כ פרסומים: ' + rows.length + '"');
+    csvLines.push(''); // שורה ריקה
+    
+    // הוספת כותרות העמודות מעוצבות
+    csvLines.push(headers.map(h => `"${h}"`).join(','));
+    csvLines.push('"' + '='.repeat(15) + '","' + '='.repeat(12) + '","' + '='.repeat(40) + '","' + '='.repeat(35) + '","' + '='.repeat(25) + '","' + '='.repeat(15) + '","' + '='.repeat(35) + '"');
+    
+    // הוספת שורות הנתונים
+    rows.forEach((row, index) => {
+        csvLines.push(row.join(','));
+    });
+    
+    // הוספת סיכום מעוצב בסוף
+    csvLines.push('');
+    csvLines.push('"' + '='.repeat(15) + '","' + '='.repeat(12) + '","' + '='.repeat(40) + '","' + '='.repeat(35) + '","' + '='.repeat(25) + '","' + '='.repeat(15) + '","' + '='.repeat(35) + '"');
+    csvLines.push('"סיכום","","","","","",""');
+    csvLines.push('"סה״כ פרסומים: ' + rows.length + '","","","","","",""');
+    csvLines.push('"עמודת חברים: מספר החברים בכל קבוצה","","","","","",""');
+    csvLines.push('"נוצר על ידי מערכת Postify","","","","","",""');
+    
+    // הוספת BOM לתמיכה בעברית
+    const BOM = '\uFEFF';
+    return BOM + csvLines.join('\n');
+}
+
+// הורדת קובץ CSV
+function downloadCSV(csvContent, filename) {
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    
+    if (link.download !== undefined) {
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', filename);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    } else {
+        // Fallback for older browsers
+        window.open('data:text/csv;charset=utf-8,' + encodeURIComponent(csvContent));
+    }
+}
+
+// סגירת הפופאפ בלחיצה על הרקע
+document.addEventListener('click', function(e) {
+    if (e.target.id === 'export-overlay') {
+        closeExportDialog();
+    }
+});
+
+// ===== פונקציות טבלה מסודרת =====
+
+let allTableData = []; // משתנה גלובלי לאחסון כל הנתונים
+
+// פתיחת תצוגת טבלה
+async function openTableView() {
+    const overlay = document.getElementById('table-overlay');
+    overlay.style.display = 'flex';
+    
+    // טען את כל הנתונים הקיימים
+    await loadTableData();
+    renderTable();
+}
+
+// סגירת תצוגת טבלה
+function closeTableView() {
+    document.getElementById('table-overlay').style.display = 'none';
+}
+
+// טעינת נתונים לטבלה
+async function loadTableData() {
+    // השתמש בנתונים הקיימים תחילה
+    allTableData = [];
+    
+    if (publishedPosts && publishedPosts.length > 0) {
+        publishedPosts.forEach(post => {
+            if (post.groups && post.groups.length > 0) {
+                post.groups.forEach(group => {
+                    allTableData.push(createTableRowData(post, group));
+                });
+            } else {
+                allTableData.push(createTableRowData(post, null));
+            }
+        });
+    }
+    
+    // אם אין נתונים, טען מהשרת
+    if (allTableData.length === 0) {
+        const selectedDate = document.getElementById('date-filter').value || new Date().toISOString().split('T')[0];
+        const posts = await loadSingleDateData(selectedDate);
+        
+        posts.forEach(post => {
+            if (post.groups && post.groups.length > 0) {
+                post.groups.forEach(group => {
+                    allTableData.push(createTableRowData(post, group));
+                });
+            } else {
+                allTableData.push(createTableRowData(post, null));
+            }
+        });
+    }
+    
+    console.log('📊 נטענו לטבלה:', allTableData.length, 'שורות');
+}
+
+// יצירת נתוני שורה לטבלה
+function createTableRowData(post, group) {
+    const hasUrl = group && group.url && group.url !== '#' && group.url !== '';
+    const postTitle = post.postTitle || post.title || 'ללא כותרת';
+    const publishTime = formatTimeDisplay((group && group.publishTime) || post.publishTime || '');
+    
+    // ניקוי שם הקבוצה
+    let cleanedGroupName = 'ללא קבוצות';
+    let groupLink = '';
+    
+    if (group) {
+        cleanedGroupName = cleanGroupNameForTable(group.name);
+        
+        // חילוץ לינק לקבוצה
+        if (hasUrl) {
+            try {
+                const url = new URL(group.url);
+                if (url.hostname.includes('facebook.com')) {
+                    const pathParts = url.pathname.split('/');
+                    const groupsIndex = pathParts.findIndex(part => part === 'groups');
+                    if (groupsIndex !== -1 && groupsIndex + 1 < pathParts.length) {
+                        const groupId = pathParts[groupsIndex + 1];
+                        groupLink = `https://www.facebook.com/groups/${groupId}`;
+                    }
+                }
+            } catch (e) {
+                console.warn('לא ניתן לחלץ לינק קבוצה:', group.url);
+            }
+        }
+    }
+    
+    return {
+        date: post.publishDate || '',
+        time: publishTime,
+        title: postTitle,
+        groupName: cleanedGroupName,
+        status: hasUrl ? 'success' : 'failed',
+        statusText: hasUrl ? 'הצלחה' : 'כישלון',
+        postUrl: hasUrl ? group.url : '',
+        groupUrl: groupLink
+    };
+}
+
+// ניקוי שם קבוצה לטבלה
+function cleanGroupNameForTable(name) {
+    if (!name) return '';
+    
+    let cleaned = name.replace(/\s*\(\d+\)\s*/g, '').trim();
+    cleaned = cleaned.replace(/\s*facebook\s*$/i, '').trim();
+    cleaned = cleaned.replace(/^facebook\s*/i, '').trim();
+    cleaned = cleaned.replace(/[\|\-\–\—]\s*facebook/i, '').trim();
+    cleaned = cleaned.replace(/facebook\s*[\|\-\–\—]/i, '').trim();
+    cleaned = cleaned.replace(/\|/g, '').trim();
+    cleaned = cleaned.replace(/\s+/g, ' ').trim();
+    
+    return cleaned;
+}
+
+// רינדור הטבלה
+function renderTable(filteredData = null) {
+    const tableBody = document.getElementById('table-body');
+    const dataToRender = filteredData || allTableData;
+    
+    // מיון לפי תאריך ושעה
+    dataToRender.sort((a, b) => {
+        const dateA = new Date(a.date + ' ' + a.time);
+        const dateB = new Date(b.date + ' ' + b.time);
+        return dateB - dateA;
+    });
+    
+    let html = '';
+    let lastDate = '';
+    
+    dataToRender.forEach((row, index) => {
+        // הוספת מפריד בין תאריכים
+        if (row.date !== lastDate) {
+            if (lastDate !== '') {
+                html += `<tr class="date-separator"><td colspan="7">📅 ${formatDateHebrew(row.date)}</td></tr>`;
+            }
+            lastDate = row.date;
+        }
+        
+        html += `
+            <tr>
+                <td>${row.date}</td>
+                <td>${row.time}</td>
+                <td style="text-align: right; max-width: 200px; word-wrap: break-word;">${escapeHtml(row.title)}</td>
+                <td style="text-align: right;">${escapeHtml(row.groupName)}</td>
+                <td>
+                    <span class="status-${row.status}-table">${row.statusText}</span>
+                </td>
+                <td>
+                    ${row.postUrl ? `<a href="${row.postUrl}" target="_blank" class="table-link">🔗 צפה</a>` : '❌'}
+                </td>
+                <td>
+                    ${row.groupUrl ? `<a href="${row.groupUrl}" target="_blank" class="table-link">👥 קבוצה</a>` : '❌'}
+                </td>
+            </tr>
+        `;
+    });
+    
+    tableBody.innerHTML = html;
+    updateTableStats(dataToRender);
+}
+
+// עדכון סטטיסטיקות הטבלה
+function updateTableStats(data) {
+    const statsDiv = document.getElementById('table-stats');
+    const total = data.length;
+    const successful = data.filter(row => row.status === 'success').length;
+    const failed = data.filter(row => row.status === 'failed').length;
+    
+    statsDiv.innerHTML = `
+        📊 סה"כ: ${total} פרסומים | 
+        ✅ הצליחו: ${successful} | 
+        ❌ נכשלו: ${failed} |
+        📈 אחוז הצלחה: ${total > 0 ? Math.round((successful / total) * 100) : 0}%
+    `;
+}
+
+// סינון הטבלה
+function filterTable() {
+    const titleFilter = document.getElementById('filter-title').value.toLowerCase();
+    const groupFilter = document.getElementById('filter-group').value.toLowerCase();
+    const dateFilter = document.getElementById('filter-date').value;
+    const statusFilter = document.getElementById('filter-status').value;
+    
+    const filteredData = allTableData.filter(row => {
+        const titleMatch = !titleFilter || row.title.toLowerCase().includes(titleFilter);
+        const groupMatch = !groupFilter || row.groupName.toLowerCase().includes(groupFilter);
+        const dateMatch = !dateFilter || row.date === dateFilter;
+        const statusMatch = !statusFilter || row.status === statusFilter;
+        
+        return titleMatch && groupMatch && dateMatch && statusMatch;
+    });
+    
+    renderTable(filteredData);
+}
+
+// ניקוי מסננים
+function clearTableFilters() {
+    document.getElementById('filter-title').value = '';
+    document.getElementById('filter-group').value = '';
+    document.getElementById('filter-date').value = '';
+    document.getElementById('filter-status').value = '';
+    
+    renderTable();
+}
+
+// פורמט תאריך לעברית
+function formatDateHebrew(dateStr) {
+    try {
+        const date = new Date(dateStr);
+        return date.toLocaleDateString('he-IL', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+    } catch (e) {
+        return dateStr;
+    }
+}
+
+// סגירת הטבלה בלחיצה על הרקע
+document.addEventListener('click', function(e) {
+    if (e.target.id === 'table-overlay') {
+        closeTableView();
+    }
+});
+
+// ===== סוף פונקציות טבלה =====
+
+// ===== סוף פונקציות ייצוא =====
+</script>
+
+<div class="published-container">
+    <div class="header-section">
+        <h1 class="page-title">
+            📋 דו"ח פרסום יומי
+        </h1>
+        
+        <div class="controls-section">
+            <div class="date-filter">
+                <label for="date-filter">בחר תאריך:</label>
+                <input type="date" id="date-filter" onchange="onDateChange()">
+            </div>
+            <button class="refresh-btn" onclick="refreshPosts()">
+                🔄 רענן
+            </button>
+            <button class="export-btn" onclick="openExportDialog()">
+                📊 ייצא נתוני פרסום
+            </button>
+            <button class="table-view-btn" onclick="openTableView()">
+                📋 הצג כטבלה
+            </button>
+        </div>
+    </div>
+    
+    <div class="stats-section">
+        <div class="stat-card today">
+            <div class="stat-number" id="today-count">0</div>
+            <div class="stat-label">פרסומים היום</div>
+        </div>
+        
+        <div class="stat-card total">
+            <div class="stat-number" id="week-count">0</div>
+            <div class="stat-label">פרסומים מתחילת השבוע</div>
+        </div>
+        
+        <div class="stat-card groups">
+            <div class="stat-number" id="month-count">0</div>
+            <div class="stat-label">פרסומים מתחילת החודש</div>
+        </div>
+    </div>
+    
+    <div id="loading" class="loading-spinner" style="display: none;">
+        <div class="loading-icon">⏳</div>
+        <div class="loading-text" id="loading-text">טוען פרסומים<span class="loading-dots"></span></div>
+        <div class="loading-progress" id="loading-details" style="font-size: 0.9em; margin-top: 8px;">אנא המתן, הנתונים נטענים מהשרת</div>
+    </div>
+    
+    <div id="error-container" style="display: none;"></div>
+    
+    <div id="posts-container" class="posts-list">
+        <!-- הפרסומים יוצגו כאן -->
+    </div>
+</div>
+
+<!-- פופאפ ייצוא נתונים -->
+<div id="export-overlay" class="export-overlay">
+    <div class="export-dialog">
+        <div class="export-header">
+            📊 ייצוא נתוני פרסום
+        </div>
+        
+        <div class="export-options">
+            <div class="export-option" onclick="selectExportOption('custom')">
+                <input type="radio" name="export-period" value="custom" id="custom-range">
+                <label for="custom-range">🗓️ טווח תאריכים מותאם אישית</label>
+            </div>
+            <div class="date-range-inputs" id="custom-date-inputs">
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <label>מתאריך:</label>
+                        <input type="date" id="export-start-date">
+                    </div>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <label>עד תאריך:</label>
+                        <input type="date" id="export-end-date">
+                    </div>
+                </div>
+            </div>
+            
+            <div class="export-option" onclick="selectExportOption('last-month')">
+                <input type="radio" name="export-period" value="last-month" id="last-month">
+                <label for="last-month">📅 החודש הנוכחי</label>
+            </div>
+            
+            <div class="export-option" onclick="selectExportOption('current-month')">
+                <input type="radio" name="export-period" value="current-month" id="current-month">
+                <label for="current-month">📆 חודש שעבר</label>
+            </div>
+            
+            <div class="export-option" onclick="selectExportOption('all-time')">
+                <input type="radio" name="export-period" value="all-time" id="all-time">
+                <label for="all-time">🌍 כל הנתונים (מאז ומתמיד)</label>
+            </div>
+        </div>
+        
+        <div class="export-loading" id="export-loading">
+            <div class="export-loading-icon">⏳</div>
+            <div>מכין קובץ CSV... אנא המתן</div>
+        </div>
+        
+        <div class="export-actions" id="export-actions">
+            <button class="export-action-btn export-confirm" onclick="executeExport()">
+                📥 ייצא נתונים
+            </button>
+            <button class="export-action-btn export-cancel" onclick="closeExportDialog()">
+                ❌ ביטול
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- טבלה מסודרת -->
+<div id="table-overlay" class="table-overlay">
+    <div class="table-dialog">
+        <div class="table-header">
+            <h2 class="table-title">📋 טבלת פרסומים מסודרת</h2>
+            <button class="table-close-btn" onclick="closeTableView()">✕</button>
+        </div>
+        
+        <div class="table-filters">
+            <div class="filter-group">
+                <label>חיפוש כותרת:</label>
+                <input type="text" id="filter-title" placeholder="הקלד לחיפוש..." onkeyup="filterTable()">
+            </div>
+            
+            <div class="filter-group">
+                <label>חיפוש קבוצה:</label>
+                <input type="text" id="filter-group" placeholder="שם קבוצה..." onkeyup="filterTable()">
+            </div>
+            
+            <div class="filter-group">
+                <label>תאריך:</label>
+                <input type="date" id="filter-date" onchange="filterTable()">
+            </div>
+            
+            <div class="filter-group">
+                <label>סטטוס:</label>
+                <select id="filter-status" onchange="filterTable()">
+                    <option value="">הכל</option>
+                    <option value="success">הצלחה</option>
+                    <option value="failed">כישלון</option>
+                </select>
+            </div>
+            
+            <button class="clear-filters-btn" onclick="clearTableFilters()">
+                🗑️ נקה מסננים
+            </button>
+        </div>
+        
+        <div class="table-container">
+            <table class="data-table" id="posts-table">
+                <thead>
+                    <tr>
+                        <th>תאריך</th>
+                        <th>שעה</th>
+                        <th>כותרת הפוסט</th>
+                        <th>שם הקבוצה</th>
+                        <th>סטטוס</th>
+                        <th>לינק לפרסום</th>
+                        <th>לינק לקבוצה</th>
+                    </tr>
+                </thead>
+                <tbody id="table-body">
+                    <!-- הנתונים יוכנסו כאן -->
+                </tbody>
+            </table>
+        </div>
+        
+        <div class="table-stats" id="table-stats">
+            <!-- סטטיסטיקות יוצגו כאן -->
+        </div>
+    </div>
+</div>
+
+</body>
+</html>

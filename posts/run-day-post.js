@@ -793,9 +793,19 @@ function updateHeartbeat({ group, postFile, status, index }) {
     }
 
     // בדיקה אם היום שבת, חג או יום זיכרון
-    if (day === 6 || jewishHolidaysAndMemorials.includes(todayStr)) {
-      log("🛑 שבת, חג או יום זיכרון — אין פרסום היום.");
-      process.exit(0);
+    if (DAILY_SETTINGS.ENABLE_SABBATH_SHUTDOWN) {
+      // מצב רגיל: לא פועל בשבת וחגים
+      if (day === 6 || jewishHolidaysAndMemorials.includes(todayStr)) {
+        log("🛑 שבת, חג או יום זיכרון — אין פרסום היום.");
+        process.exit(0);
+      }
+    } else {
+      // מצב מבוטל הגבלת שבת: פועל כל השבוע כולל שבת, אך לא בחגים
+      if (jewishHolidaysAndMemorials.includes(todayStr)) {
+        log("🛑 חג או יום זיכרון — אין פרסום היום.");
+        process.exit(0);
+      }
+      log("✅ הגבלת שבת מבוטלת: מפרסם כל השבוע כולל שבת (חוץ מחגים).");
     }
 
     async function countdown(seconds) {

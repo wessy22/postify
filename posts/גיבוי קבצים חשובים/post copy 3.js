@@ -1,10 +1,10 @@
-const { sendErrorMail } = require("./mailer");
+const { sendErrorMail } = require("../mailer");
 const puppeteer = require("puppeteer-core");
 const { execSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const config = require("./config.json");
+const config = require("../config.json");
 
 async function runWithTimeout(fn, ms = 12 * 60 * 1000) {
   let timeout;
@@ -44,7 +44,7 @@ const postText = postData.text;
 
 const logToSheet = async (...args) => {
   try {
-    const fn = require('./log-to-sheets');
+    const fn = require('../log-to-sheets');
     await fn(...args);
   } catch (e) {
     console.error('⚠️ Failed to log to Google Sheet:', e.message);

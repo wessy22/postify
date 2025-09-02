@@ -1,10 +1,10 @@
-const { sendErrorMail } = require("./mailer");
+const { sendErrorMail } = require("../mailer");
 const puppeteer = require("puppeteer-core");
 const { execSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const config = require("./config.json");
+const config = require("../config.json");
 
 async function runWithTimeout(fn, ms = 12 * 60 * 1000) {
   let timeout;
@@ -26,10 +26,9 @@ try {
 // קריאת פרמטרים מהפקודה
 const groupUrl = process.argv[2];
 const jsonFileName = process.argv[3];
-const isRetryMode = process.argv[4] === "--retry"; // האם זה ניסיון חוזר
 
 if (!groupUrl || !jsonFileName) {
-  console.error("❌ Usage: node post.js <groupUrl> <jsonFileName> [--retry|--first]");
+  console.error("❌ Usage: node post.js <groupUrl> <jsonFileName>");
   process.exit(1);
 }
 
@@ -44,134 +43,21 @@ const postText = postData.text;
 
 const logToSheet = async (...args) => {
   try {
-    const fn = require('./log-to-sheets');
+    const fn = require('../log-to-sheets');
     await fn(...args);
   } catch (e) {
     console.error('⚠️ Failed to log to Google Sheet:', e.message);
   }
 };
 
-// פונקציה לאופטימיזציה של קישורים עבור פייסבוק
-const optimizeLinksForFacebook = (text) => {
-  console.log("🔗 Optimizing links for Facebook recognition...");
-  
-  // Regex לזיהוי URLs (כולל tinyurl, bit.ly, http/https וכו')
-  const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9-]+\.[a-zA-Z]{2,}\/[^\s]*)/gi;
-  
-  let optimizedText = text;
-  let matches = text.match(urlRegex);
-  
-  if (matches) {
-    console.log(`🔍 Found ${matches.length} potential links:`, matches);
-    
-    matches.forEach(url => {
-      // בדוק אם הקישור כבר בשורה נפרדת
-      const urlIndex = optimizedText.indexOf(url);
-      const beforeUrl = optimizedText.substring(0, urlIndex);
-      const afterUrl = optimizedText.substring(urlIndex + url.length);
-      
-      // בדוק מה יש לפני ואחרי הקישור
-      const charBefore = beforeUrl.charAt(beforeUrl.length - 1);
-      const charAfter = afterUrl.charAt(0);
-      
-      let needsFixing = false;
-      let newUrl = url;
-      
-      // אם אין ירידת שורה לפני הקישור, הוסף
-      if (charBefore !== '\n' && charBefore !== '' && beforeUrl.trim() !== '') {
-        newUrl = '\n\n' + newUrl;
-        needsFixing = true;
-      }
-      
-      // אם אין ירידת שורה אחרי הקישור, הוסף
-      if (charAfter !== '\n' && charAfter !== '' && afterUrl.trim() !== '') {
-        newUrl = newUrl + '\n\n';
-        needsFixing = true;
-      }
-      
-      if (needsFixing) {
-        optimizedText = optimizedText.replace(url, newUrl);
-        console.log(`✅ Optimized link: ${url} -> surrounded with newlines`);
-      }
-    });
-  }
-  
-  // נקה רווחים מיותרים שנוצרו בתהליך
-  optimizedText = optimizedText
-    .replace(/\n{4,}/g, '\n\n\n') // מקסימום 3 ירידות שורה רצופות
-    .replace(/[ \t]+\n/g, '\n') // הסר רווחים לפני ירידת שורה
-    .replace(/\n[ \t]+/g, '\n'); // הסר רווחים אחרי ירידת שורה
-  
-  return optimizedText;
-};
-
-// פונקציה להכרח זיהוי קישורים על ידי פייסבוק
-const triggerLinkRecognition = async (page, textbox) => {
-  try {
-    console.log("🔄 Triggering Facebook link recognition...");
-    
-    // בדוק אם יש קישורים בטקסט
-    const textContent = await page.evaluate(el => el.textContent, textbox);
-    const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9-]+\.[a-zA-Z]{2,}\/[^\s]*)/gi;
-    const links = textContent.match(urlRegex);
-    
-    if (links && links.length > 0) {
-      console.log(`🔍 Found ${links.length} links, checking if recognized...`);
-      
-      // בדוק אם יש קישורים כחולים (מזוהים)
-      const blueLinks = await page.$$('div[role="dialog"] a[href]');
-      
-      if (blueLinks.length < links.length) {
-        console.log(`⚠️ Only ${blueLinks.length}/${links.length} links recognized as blue links`);
-        console.log("🔧 Attempting to trigger recognition...");
-        
-        // טריק 1: לחץ בסוף הטקסט ואז הוסף רווח ומחק
-        await textbox.focus();
-        await page.keyboard.press('End'); // לך לסוף הטקסט
-        await page.keyboard.type(' ', { delay: 100 });
-        await new Promise(r => setTimeout(r, 500));
-        await page.keyboard.press('Backspace');
-        await new Promise(r => setTimeout(r, 1000));
-        
-        // טריק 2: אם עדיין לא עובד, נסה select all + type again
-        const updatedBlueLinks = await page.$$('div[role="dialog"] a[href]');
-        if (updatedBlueLinks.length < links.length) {
-          console.log("🔄 Trying select all + minor edit trick...");
-          await page.keyboard.down('Control');
-          await page.keyboard.press('a');
-          await page.keyboard.up('Control');
-          await new Promise(r => setTimeout(r, 300));
-          
-          // הוסף נקודה ומחק אותה
-          await page.keyboard.type('.', { delay: 100 });
-          await new Promise(r => setTimeout(r, 500));
-          await page.keyboard.press('Backspace');
-          await new Promise(r => setTimeout(r, 1500));
-        }
-        
-        // בדיקה סופית
-        const finalBlueLinks = await page.$$('div[role="dialog"] a[href]');
-        console.log(`✅ Final result: ${finalBlueLinks.length}/${links.length} links recognized`);
-      } else {
-        console.log("✅ All links already recognized as blue links");
-      }
-    }
-  } catch (error) {
-    console.log("⚠️ Error in link recognition trigger:", error.message);
-  }
-};
-
 const humanType = async (element, text) => {
   // נקה רווחים מיותרים ושורות ריקות
-  let cleanText = text
+  const cleanText = text
     .replace(/\r\n/g, '\n') // המר CRLF ל-LF
     .replace(/\n{3,}/g, '\n\n') // הגבל שורות ריקות רצופות ל-2 לכל היותר
     .replace(/[ \t]+/g, ' ') // הפך רווחים מרובים לרווח יחיד
     .replace(/[ \t]*\n[ \t]*/g, '\n') // הסר רווחים בתחילת ובסוף שורות
     .trim(); // הסר רווחים מתחילת וסוף הטקסט
-
-  // שיפור זיהוי קישורים - וודא שכל URL בשורה נפרדת
-  cleanText = optimizeLinksForFacebook(cleanText);
 
   console.log("🧹 Cleaned text length:", cleanText.length);
   console.log("🧹 Cleaned text (first 200 chars):", JSON.stringify(cleanText.substring(0, 200)));
@@ -182,13 +68,13 @@ const humanType = async (element, text) => {
   for (const char of cleanText) {
     if (charsTyped > 0 && charsTyped % typoFrequency === 0 && /[a-zא-ת]/i.test(char)) {
       const wrongChar = String.fromCharCode(char.charCodeAt(0) + 1);
-      await element.type(wrongChar, { delay: 20 }); // הוספת delay לטייפינג
+      await element.type(wrongChar);
       await new Promise(r => setTimeout(r, 100 + Math.random() * 100));
       await element.press('Backspace');
       await new Promise(r => setTimeout(r, 100));
     }
 
-    await element.type(char, { delay: 20 }); // הוספת delay לכל תו
+    await element.type(char);
     charsTyped++;
 
     const delay = 30 + Math.floor(Math.random() * 120);
@@ -226,17 +112,7 @@ async function main() {
 
     console.log("📍 Navigating to group page...");
     await page.goto(groupUrl, { waitUntil: "networkidle2", timeout: 0 });
-    
-    // קבלת שם הקבוצה מיד אחרי הטעינה
-    try {
-      await new Promise(r => setTimeout(r, 3000)); // המתן שהדף יטען לגמרי
-      groupName = await page.title();
-      console.log("📋 Group name detected:", groupName);
-      // שמירת שם הקבוצה לקובץ מיד
-      fs.writeFileSync(config.currentGroupFile, groupName, "utf-8");
-    } catch (e) {
-      console.log("⚠️ Could not get group name yet, will try again later");
-    }
+  await logToSheet('Post started', 'Info', groupUrl, 'Navigated to group page', postData.title || '');
 
     console.log("🧭 Looking for composer...");
 
@@ -443,10 +319,7 @@ if (!composerFound) {
         const debugPath = `C:\\temp\\composer-not-found-${Date.now()}.png`;
         await page.screenshot({ path: debugPath });
         console.log("❌ Composer not found after all attempts. Screenshot saved:", debugPath);
-        // תיעוד לגוגל שיטס רק אם זה לא ניסיון חוזר
-        if (!isRetryMode) {
-          await logToSheet('Composer not found', 'Error', groupUrl, `לא נמצא כפתור "כאן כותבים" גם אחרי רענון, המתנה וגלילה. Screenshot: ${debugPath}`, postData.title || '');
-        }
+  await logToSheet('Composer not found', 'Error', groupUrl, `לא נמצא כפתור "כאן כותבים" גם אחרי רענון, המתנה וגלילה. Screenshot: ${debugPath}`, postData.title || '');
         await sendErrorMail("❌ Composer not found", `לא נמצא composer בקבוצה: ${groupUrl}\nScreenshot: ${debugPath}`);
         await browser.close();
         process.exit(1); // יציאה עם קוד שגיאה
@@ -460,13 +333,6 @@ if (!composerFound) {
     const textbox = await page.$('div[role="dialog"] div[role="textbox"]');
     await textbox.click();
     await humanType(textbox, postText);
-
-    // המתן לפייסבוק לעבד את הקישורים ולזהות אותם
-    console.log("🔗 Waiting for Facebook to process links...");
-    await new Promise(r => setTimeout(r, 3000));
-
-    // בדוק אם יש קישורים שלא זוהו ונסה להעזר בטריק העריכה
-    await triggerLinkRecognition(page, textbox);
 
     for (const imagePath of postData.images) {
       // בדוק אם הקובץ הוא תמונה (לפי סיומת)
@@ -483,6 +349,7 @@ if (!composerFound) {
         console.log("✅ Image copied to clipboard.");
       } catch (error) {
         console.error(`❌ Failed to copy ${imagePath} to clipboard: ${error.message}`);
+  await logToSheet('Image copy failed', 'Error', groupUrl, imagePath, postData.title || '');
         continue;
       }
 
@@ -552,6 +419,7 @@ if (!composerFound) {
           }
         } catch (error) {
           console.error(`❌ שגיאה בהעלאת וידאו ${videoPath}: ${error.message}`);
+          await logToSheet('Video upload failed', 'Error', groupUrl, videoPath, postData.title || '');
         }
       }
     }
@@ -570,10 +438,7 @@ if (!composerFound) {
 
     if (!publishClicked) {
       console.log("❌ Publish button not found");
-      // תיעוד לגוגל שיטס רק אם זה לא ניסיון חוזר
-      if (!isRetryMode) {
-        await logToSheet('Publish button not found', 'Error', groupUrl, 'לא נמצא כפתור פרסום', postData.title || '');
-      }
+      await logToSheet('Publish button not found', 'Error', groupUrl, 'לא נמצא כפתור פרסום', postData.title || '');
       await browser.close();
       process.exit(1);
     }
@@ -596,10 +461,7 @@ if (!composerFound) {
         
         if (errorMessages.length > 0) {
           console.log("❌ Error messages found:", errorMessages);
-          // תיעוד לגוגל שיטס רק אם זה לא ניסיון חוזר
-          if (!isRetryMode) {
-            await logToSheet('Publishing failed', 'Error', groupUrl, `הודעות שגיאה: ${errorMessages.join(', ')}`, postData.title || '');
-          }
+          await logToSheet('Publishing failed', 'Error', groupUrl, `הודעות שגיאה: ${errorMessages.join(', ')}`, postData.title || '');
           await browser.close();
           process.exit(1);
         } else {
@@ -613,10 +475,7 @@ if (!composerFound) {
             console.log("✅ Dialog closed after additional wait - publish successful");
           } else {
             console.log("❌ Dialog still open after total 60 seconds - assuming failure");
-            // תיעוד לגוגל שיטס רק אם זה לא ניסיון חוזר
-            if (!isRetryMode) {
-              await logToSheet('Publishing timeout', 'Error', groupUrl, 'הדיאלוג לא נסגר תוך 60 שניות אחרי הפרסום', postData.title || '');
-            }
+            await logToSheet('Publishing timeout', 'Error', groupUrl, 'הדיאלוג לא נסגר תוך 60 שניות אחרי הפרסום', postData.title || '');
             await browser.close();
             process.exit(1);
           }
@@ -624,36 +483,23 @@ if (!composerFound) {
       }
     } catch (err) {
       console.log("❌ Error checking publish success:", err.message);
-      // תיעוד לגוגל שיטס רק אם זה לא ניסיון חוזר
-      if (!isRetryMode) {
-        await logToSheet('Error checking publish', 'Error', groupUrl, `שגיאה בבדיקת הצלחת הפרסום: ${err.message}`, postData.title || '');
-      }
+      await logToSheet('Error checking publish', 'Error', groupUrl, `שגיאה בבדיקת הצלחת הפרסום: ${err.message}`, postData.title || '');
       await browser.close();
       process.exit(1);
     }
 
-    // קבלת שם הקבוצה העדכני ביותר
-    try {
-      const currentGroupName = await page.title();
-      if (currentGroupName && currentGroupName !== groupUrl) {
-        groupName = currentGroupName;
-        console.log("📋 Updated group name:", groupName);
-      }
-    } catch (e) {
-      console.log("⚠️ Could not update group name:", e.message);
-    }
-    
+    groupName = await page.title();
     console.log("GROUP_NAME_START" + groupName + "GROUP_NAME_END");
 
     // רישום הצלחה ל־logToSheet רק אם הפרסום הצליח
     if (publishSuccess) {
       const now = new Date();
       const time = now.toLocaleTimeString("he-IL", { hour: '2-digit', minute: '2-digit' });
-      await logToSheet('Publishing finished', 'Success', groupName, `נוסח בהצלחה בשעה ${time}`, postData.title || '');
+      await logToSheet('Publishing finished', 'Success', groupName, time, postData.title || '');
       console.log("✅ Post published successfully");
     }
 
-    // שמירת שם הקבוצה העדכני לקובץ
+    // רישום ל־logToSheet
     fs.writeFileSync(config.currentGroupFile, groupName, "utf-8");
     console.log("✅ Group name saved:", groupName);
 
@@ -661,10 +507,7 @@ if (!composerFound) {
 
   } catch (err) {
     console.error("❌ Error:", err.message);
-    // תיעוד לגוגל שיטס רק אם זה לא ניסיון חוזר
-    if (!isRetryMode) {
-      await logToSheet('Post failed', 'Error', groupName || groupUrl, `שגיאה כללית: ${err.message}`, postData.title || '');
-    }
+    await logToSheet('Post failed', 'Error', groupName || groupUrl, `שגיאה כללית: ${err.message}`, postData.title || '');
     if (browser) await browser.close();
 
     const message = [
@@ -690,44 +533,41 @@ async function closeChromeProcesses() {
 }
 
 // פונקציית ריטריי
-async function runWithRetry(maxRetries = 3, logToSheetOnFailure = true) {
+async function runWithRetry(maxRetries = 3) {
   let attempt = 0;
-  let lastError = null;
-  
   while (attempt < maxRetries) {
     try {
       await main();
       return process.exit(0); // הצלחה
     } catch (err) {
-      lastError = err;
       if (err.message && err.message.includes("net::ERR_ABORTED")) {
         attempt++;
         console.error(`❌ net::ERR_ABORTED – ניסיון ${attempt}/${maxRetries}`);
         await closeChromeProcesses();
         if (attempt >= maxRetries) {
-          // כישלון סופי אחרי כל הניסיונות - תיעוד לגוגל שיטס רק אם מותר
-          if (logToSheetOnFailure) {
-            await logToSheet('Post failed', 'Error', groupUrl, `נכשל אחרי ${maxRetries} ניסיונות - net::ERR_ABORTED`, postData.title || '');
-          }
           await sendErrorMail("❌ שגיאה net::ERR_ABORTED", `נכשל 3 פעמים בקבוצה: ${groupUrl}`);
           return process.exit(1);
         }
-        // ללא השהיה בין ניסיונות retry של אותה קבוצה
+        await new Promise(r => setTimeout(r, 5000)); // המתן 5 שניות בין ניסיונות
       } else {
-        // שגיאה אחרת - main() כבר תיעד את השגיאה ושלח מייל (רק אם מותר)
+        // שגיאה אחרת – שלח מייל ויציאה
+        const message = [
+          `🛑 התרחשה שגיאה בסקריפט: ${__filename}`,
+          "",
+          `❗ שגיאה: ${err.message}`,
+          "",
+          err.stack,
+        ].join("\n");
+        await sendErrorMail("❌ שגיאה באוטומציה", message);
         return process.exit(1);
       }
     }
   }
 }
 
-// הפעל את הריטריי במקום ה־IIFE - בניסיון ראשון מותר לתעד, בניסיונות חוזרים לא
-runWithTimeout(() => runWithRetry(3, !isRetryMode), 12 * 60 * 1000)
-  .catch(async err => {
-    // תיעוד טיימאווט לגוגל שיטס רק אם זה לא ניסיון חוזר
-    if (!isRetryMode) {
-      await logToSheet('Post failed', 'Error', groupUrl, `טיימאווט - עברו 12 דקות: ${err.message}`, postData.title || '');
-    }
-    await sendErrorMail("פוסט נתקע", `Timeout - עברו 12 דקות בפוסט: ${groupUrl}\n${err.message}`);
+// הפעל את הריטריי במקום ה־IIFE
+runWithTimeout(runWithRetry, 12 * 60 * 1000)
+  .catch(err => {
+    sendErrorMail("פוסט נתקע", `Timeout - עברו 12 דקות בפוסט: ${groupUrl}\n${err.message}`);
     process.exit(1);
   });

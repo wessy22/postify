@@ -1,10 +1,6 @@
 const fs = require('fs');
-const path = require('path');
 const { exec } = require('child_process');
-const { sendErrorMail, sendMail } = require("./mailer");
-
-// קבוע לקובץ מצבי רוטציה
-const ROTATION_STATE_FILE = path.join(__dirname, "rotation-states.json");
+const { sendErrorMail, sendMail } = require("../mailer");
 
 // ================================================================
 // RUNDAY - מערכת תזמון פוסטים משודרגת עם מניעת כפילויות תאריכים
@@ -560,108 +556,15 @@ function selectPostsForDay(allPosts, today = new Date()) {
     selectedPosts.forEach((post, index) => {
       const distItem = distribution[index];
       if (distItem && distItem.allowedGroups < post.groups.length) {
-        // שימוש ברוטציה במקום slice רגיל
-        post.limitedGroups = selectGroupsWithRotation(post, distItem.allowedGroups);
+        post.limitedGroups = post.groups.slice(0, distItem.allowedGroups);
         post.originalGroupsCount = post.groups.length;
         post.limitedGroupsCount = distItem.allowedGroups;
         console.log(`📊 פוסט ${post.filename}: מוגבל ל-${distItem.allowedGroups} מתוך ${post.groups.length} קבוצות`);
-        // הרוטציה כבר נשמרת בקובץ הנפרד, לא צריך לשמור כאן
       }
     });
   }
   
   return selectedPosts;
-}
-
-// פונקציה לניקוי שמות קבוצות לפני הכנסה לגוגל שיטס
-function cleanGroupName(groupName) {
-  if (!groupName) return groupName;
-  
-  let cleaned = groupName
-    // הסרת "| Facebook" בסוף
-    .replace(/\s*\|\s*Facebook\s*$/i, '')
-    // הסרת "Facebook" בכל מקום
-    .replace(/\s*Facebook\s*/gi, '')
-    // הסרת סוגריים עם מספרים ופלוסים כמו (20+) או (5)
-    .replace(/\(\d+\+?\)\s*/g, '')
-    // הסרת pipe symbols מיותרים
-    .replace(/\s*\|\s*/g, ' ')
-    // הסרת רווחים מיותרים
-    .replace(/\s+/g, ' ')
-    // הסרת רווחים בהתחלה ובסוף
-    .trim();
-    
-  return cleaned;
-}
-
-// פונקציות לניהול מצב רוטציה
-function loadRotationStates() {
-  try {
-    if (fs.existsSync(ROTATION_STATE_FILE)) {
-      return JSON.parse(fs.readFileSync(ROTATION_STATE_FILE, "utf-8"));
-    }
-  } catch (e) {
-    console.log(`⚠️ שגיאה בטעינת מצב רוטציה: ${e.message}`);
-  }
-  return {};
-}
-
-function saveRotationStates(states) {
-  try {
-    fs.writeFileSync(ROTATION_STATE_FILE, JSON.stringify(states, null, 2), "utf-8");
-    console.log(`💾 מצבי רוטציה נשמרו ל-rotation-states.json`);
-  } catch (e) {
-    console.log(`⚠️ שגיאה בשמירת מצב רוטציה: ${e.message}`);
-  }
-}
-
-// פונקציה לבחירת קבוצות עם מנגנון רוטציה
-function selectGroupsWithRotation(post, targetCount) {
-  // וידוא שיש מערך קבוצות
-  if (!post.groups || post.groups.length === 0) {
-    return [];
-  }
-  
-  const totalGroups = post.groups.length;
-  
-  // אם צריך פחות או שווה לכמות הכוללת - אין צורך ברוטציה
-  if (targetCount >= totalGroups) {
-    return [...post.groups];
-  }
-  
-  // טעינת מצבי רוטציה מהקובץ הנפרד
-  const rotationStates = loadRotationStates();
-  const postKey = post.filename;
-  
-  // קריאת מצב הרוטציה הקיים או יצירת חדש
-  const rotationState = rotationStates[postKey] || { lastStartIndex: 0, usedCount: 0 };
-  
-  // חישוב נקודת התחלה חדשה (רוטציה)
-  const newStartIndex = (rotationState.lastStartIndex + rotationState.usedCount) % totalGroups;
-  
-  // בחירת קבוצות החל מהנקודה החדשה
-  const selectedGroups = [];
-  for (let i = 0; i < targetCount; i++) {
-    const index = (newStartIndex + i) % totalGroups;
-    selectedGroups.push(post.groups[index]);
-  }
-  
-  // עדכון מצב הרוטציה בקובץ הנפרד
-  rotationStates[postKey] = {
-    lastStartIndex: newStartIndex,
-    usedCount: targetCount,
-    lastUpdated: new Date().toISOString()
-  };
-  
-  // שמירה לקובץ
-  saveRotationStates(rotationStates);
-  
-  console.log(`🔄 רוטציה בפוסט ${post.filename}: התחלה מאינדקס ${newStartIndex}, נבחרו ${targetCount} קבוצות`);
-  if (newStartIndex > 0) {
-    console.log(`   ↳ דילוג על ${newStartIndex} קבוצות ראשונות להוגנות`);
-  }
-  
-  return selectedGroups;
 }
 
 // פונקציה לבדיקה אם פוסט מסתיים היום (עם תמיכה במבנה ישן וחדש)
@@ -768,8 +671,8 @@ function updateHeartbeat({ group, postFile, status, index }) {
   try {
     const path = require("path");
     const { spawn, exec } = require("child_process");
-  const logToSheet = require("./log-to-sheets");
-  const config = require("./config.json");
+  const logToSheet = require("../log-to-sheets");
+  const config = require("../config.json");
 
     // בדיקה אם רץ עם פרמטר --force-late
     if (process.argv.includes('--force-late')) {
@@ -1013,7 +916,7 @@ function updateHeartbeat({ group, postFile, status, index }) {
           const groupUrl = groupsToPublish[gi];
 
           log(`📢 posting to group(${gi + 1}/${groupsToPublish.length}): ${groupUrl}`);
-          await logToSheet("Publishing to group", "Started", cleanGroupName(groupUrl), `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`);
+          await logToSheet("Publishing to group", "Started", groupUrl, `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`);
 
           // לפני ניסיון פרסום
           updateHeartbeat({
@@ -1059,17 +962,15 @@ function updateHeartbeat({ group, postFile, status, index }) {
                 console.log("⚠️ לא ניתן לכתוב heartbeat:", e.message);
               }
 
-              // העברת פרמטר retry כדי שpost.js לא יתעד בניסיונות ביניים
-              const isRetry = retryCount > 0;
-              const child = spawn("node", ["post.js", groupUrl, post.filename, isRetry ? "--retry" : "--first"], { stdio: "inherit" });
+              const child = spawn("node", ["post.js", groupUrl, post.filename], { stdio: "inherit" });
 
               // --- Timeout ---
-              const TIMEOUT = 5 * 60 * 1000;
+              const TIMEOUT = 13 * 60 * 1000;
               let timeoutId = setTimeout(async () => {
-                log(`⏰ Timeout! post.js לקח יותר מ־5 דקות. סוגר תהליך וממשיך...`);
+                log(`⏰ Timeout! post.js לקח יותר מ־13 דקות. סוגר תהליך וממשיך...`);
                 child.kill("SIGKILL");
-                // לא נרשם timeout לגוגל שיטס - רק לוג ומייל
-                sendErrorMail("⏰ Timeout - קבוצה נתקעה", `הקבוצה ${groupUrl} נתקעה ליותר מ־5 דקות ונעצרה אוטומטית.`);
+                await logToSheet("Publishing timeout", "Error", groupUrl, "הפרסום נתקע ליותר מ-13 דקות ונעצר אוטומטית", post.filename);
+                sendErrorMail("⏰ Timeout - קבוצה נתקעה", `הקבוצה ${groupUrl} נתקעה ליותר מ־13 דקות ונעצרה אוטומטית.`);
               }, TIMEOUT);
 
               // --- עדכון state ---
@@ -1137,37 +1038,28 @@ function updateHeartbeat({ group, postFile, status, index }) {
                   log(`❌ שגיאה בפרסום לקבוצה ${groupName}: ${errorReason}`);
                   const msg = `❌ הפרסום לקבוצה ${groupName} נכשל.\n\n📄 סיבה: ${errorReason}`;
                   await sendErrorMail("❌ שגיאה בפרסום לקבוצה", `קובץ: ${post.filename}\nקבוצה: ${groupName}\n${errorReason}`);
-                  // התיעוד לגוגל שיטס נעשה כעת בשכבת post.js רק בניסיון הסופי
-                  if (retryCount < 2) { // שינוי: retryCount < 2 כי כבר העלינו אותו
+                  try {
+                    await logToSheet("Publishing finished", "Error", groupName, errorReason);
+                  } catch (e) {
+                    log("⚠️ שגיאה ברישום לגוגל שיט: " + e.message);
+                    await sendErrorMail("⚠️ שגיאה ברישום לגוגל שיט", `לא ניתן לרשום את התוצאה לגוגל שיט: ${e.message}`);
+                  }
+                  if (retryCount < 1) {
                     log("🔁 מנסה שוב לפרסם לקבוצה...");
                   } else {
                     log("❌ מעבר לקבוצה הבאה אחרי כישלון");
-                    // רק כעת נתעד לגוגל שיטס את הכישלון הסופי - זהה לpost.js
-                    try {
-                      await logToSheet("Post failed", "Error", cleanGroupName(groupName), errorReason);
-                    } catch (e) {
-                      log("⚠️ שגיאה ברישום לגוגל שיט: " + e.message);
-                      await sendErrorMail("⚠️ שגיאה ברישום לגוגל שיט", `לא ניתן לרשום את התוצאה לגוגל שיט: ${e.message}`);
-                    }
                   }
                 }
 
-                // העלאת הcounter לפני ההשהיה
-                retryCount++;
-
-                // --- השהייה רנדומלית מה-config (רק בין קבוצות, לא בין ניסיונות retry) ---
-                if (!skipDelay && success) { // רק אם הפרסום הצליח (ועוברים לקבוצה הבאה)
+                // --- השהייה רנדומלית מה-config (רק אם לא שולח --now) ---
+                if (!skipDelay) {
                   const delaySec = config.minDelaySec + Math.floor(Math.random() * (config.maxDelaySec - config.minDelaySec + 1));
                   const minutes = Math.floor(delaySec / 60);
                   const seconds = delaySec % 60;
                   log(`⏱ ממתין ${minutes} דקות ו־${seconds} שניות לפני הקבוצה הבאה...`);
                   await countdown(delaySec);
-                } else if (!success && retryCount < 2) {
-                  log(`⚡ דילוג על השהייה (ניסיון חוזר)`);
-                } else if (skipDelay) {
+                } else {
                   log(`⚡ דילוג על השהייה (--now)`);
-                } else if (!success) {
-                  log(`⚡ דילוג על השהייה (כישלון סופי)`);
                 }
 
                 resolve();
@@ -1182,7 +1074,7 @@ function updateHeartbeat({ group, postFile, status, index }) {
                 // עדכון heartbeat בשגיאה
                 updateHeartbeat({ group: groupUrl, postFile: post.filename, status: 'error', index: gi });
 
-                if (retryCount < 2) { // שינוי: retryCount < 2 כי כבר העלינו אותו
+                if (retryCount < 1) {
                   log("🔁 מנסה שוב לפרסם לקבוצה...");
                 } else {
                   log("⏭️ מדלג לקבוצה הבאה...");
@@ -1190,6 +1082,7 @@ function updateHeartbeat({ group, postFile, status, index }) {
                 resolve();
               });
             });
+            retryCount++;
           }
         }
         // עדכון אחרי שכל הקבוצות פורסמו
@@ -1555,18 +1448,6 @@ Postify
     while (postsFolderTries < 2) {
       try {
         allFiles = fs.readdirSync(POSTS_FOLDER);
-        
-        // אם הצלחנו לקרוא את התיקייה, ננקה קובץ מעקב ניסיונות restart
-        const RESTART_COUNTER_FILE = "C:\\postify\\posts\\restart-counter.json";
-        try {
-          if (fs.existsSync(RESTART_COUNTER_FILE)) {
-            fs.unlinkSync(RESTART_COUNTER_FILE);
-            log("✅ קובץ מעקב restart נמחק - המערכת עובדת תקין");
-          }
-        } catch (e) {
-          // לא חשוב אם נכשל - זה רק ניקוי
-        }
-        
         break;
       } catch (e) {
         postsFolderTries++;
@@ -1611,91 +1492,13 @@ Postify
                 }
               }
             } catch (ipErr) {}
-            
-            // מנגנון הגנה מתקדם עם מעקב ניסיונות
-            const RESTART_COUNTER_FILE = "C:\\postify\\posts\\restart-counter.json";
-            let restartCount = 0;
-            
-            // קריאת מספר ניסיונות קודמים
-            try {
-              if (fs.existsSync(RESTART_COUNTER_FILE)) {
-                const restartData = JSON.parse(fs.readFileSync(RESTART_COUNTER_FILE, 'utf-8'));
-                const now = new Date();
-                const lastError = new Date(restartData.lastError);
-                // אם השגיאה האחרונה הייתה לפני פחות מ-30 דקות, נמשיך את הספירה
-                if (now - lastError < 30 * 60 * 1000) {
-                  restartCount = restartData.count || 0;
-                }
-              }
-            } catch (e) {
-              log("⚠️ לא ניתן לקרוא קובץ מעקב ניסיונות: " + e.message);
-            }
-            
-            restartCount++;
-            
-            // שמירת מספר הניסיונות
-            try {
-              fs.writeFileSync(RESTART_COUNTER_FILE, JSON.stringify({
-                count: restartCount,
-                lastError: new Date().toISOString(),
-                error: lastPostsFolderError ? lastPostsFolderError.message : "Unknown"
-              }));
-            } catch (e) {
-              log("⚠️ לא ניתן לשמור קובץ מעקב ניסיונות: " + e.message);
-            }
-            
-            if (restartCount === 1) {
-              // ניסיון ראשון - restart מיידי
-              await sendErrorMail(
-                "❌ שגיאה ראשונה – תיקיית פוסטים לא קיימת",
-                `ניסיון 1/3: המערכת ניסתה פעמיים ולא הצליחה לגשת לתיקיית הפוסטים.\n\nשגיאה:\n${lastPostsFolderError ? lastPostsFolderError.message : ""}\n\nIP: ${ip}\n\nהמחשב יעשה restart בעוד 60 שניות...`
-              );
-              log("⚠️ ניסיון 1/3 - המחשב יעשה restart בעוד 60 שניות...");
-              await new Promise(r => setTimeout(r, 60000));
-            } else if (restartCount === 2) {
-              // ניסיון שני - המתנה 5 דקות ואז restart
-              await sendErrorMail(
-                "🔥 שגיאה שנייה – תיקיית פוסטים לא קיימת",
-                `ניסיון 2/3: בעיה חוזרת! המערכת כבר עשתה restart פעם אחת.\n\nשגיאה:\n${lastPostsFolderError ? lastPostsFolderError.message : ""}\n\nIP: ${ip}\n\nהמחשב יחכה 5 דקות ויעשה restart נוסף...`
-              );
-              log("� ניסיון 2/3 - המתנה 5 דקות לפני restart...");
-              await new Promise(r => setTimeout(r, 5 * 60000)); // 5 דקות
-            } else {
-              // ניסיון שלישי - שגיאה חמורה וכיבוי
-              await sendErrorMail(
-                "🚨 שגיאה חמורה – כישלון קריטי במערכת",
-                `ניסיון 3/3 - כישלון חמור!\n\nהמערכת נכשלה 3 פעמים ברציפות לגשת לתיקיית הפוסטים.\nזוהי בעיה קריטית שדורשת התערבות מנהל מערכת.\n\nשגיאה:\n${lastPostsFolderError ? lastPostsFolderError.message : ""}\n\nIP: ${ip}\n\nהמחשב יכבה עכשיו.\n\n=== פעולות מומלצות ===\n1. בדוק את תיקיית הפוסטים\n2. וודא שיש גישה לרשת\n3. בדוק את instance-name.txt\n4. הפעל מחדש ידנית`
-              );
-              log("🚨 ניסיון 3/3 - שגיאה חמורה! המחשב יכבה עכשיו...");
-              
-              // מחיקת קובץ המעקב לאיפוס
-              try {
-                fs.unlinkSync(RESTART_COUNTER_FILE);
-              } catch (e) {}
-              
-              await new Promise(r => setTimeout(r, 10000)); // 10 שניות להודעות
-              
-              // כיבוי המחשב
-              log("🛑 מכבה את המחשב...");
-              const { exec } = require("child_process");
-              exec("shutdown /s /f /t 0", (shutdownError) => {
-                if (shutdownError) {
-                  log("❌ שגיאה בכיבוי: " + shutdownError.message);
-                  process.exit(1);
-                }
-              });
-              return; // לא מגיעים לקוד הrestart
-            }
-            
-            // restart המחשב (רק לניסיון 1 ו-2)
-            log("🔄 מבצע restart למחשב...");
-            const { exec } = require("child_process");
-            exec("shutdown /r /f /t 0", (restartError) => {
-              if (restartError) {
-                log("❌ שגיאה ב-restart: " + restartError.message);
-                process.exit(1);
-              }
-            });
+            await sendErrorMail(
+              "❌ סיום אוטומטי – תיקיית פוסטים לא קיימת",
+              `המערכת ניסתה פעמיים ולא הצליחה לגשת לתיקיית הפוסטים.\n\nשגיאה אחרונה:\n${lastPostsFolderError ? lastPostsFolderError.message : ""}\n\nIP: ${ip}`
+            );
+            log("💤 הסקריפט ייסגר בעוד 10 שניות...");
+            await new Promise(r => setTimeout(r, 10000));
+            process.exit(1);
           }
         } else if (postsFolderTries < 2) {
           log("🔁 מנסה שוב לקרוא את תיקיית הפוסטים בעוד 10 שניות...");

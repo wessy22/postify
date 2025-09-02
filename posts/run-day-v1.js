@@ -1,10 +1,5 @@
 const fs = require('fs');
-const path = require('path');
-const { exec } = require('child_process');
 const { sendErrorMail, sendMail } = require("./mailer");
-
-// קבוע לקובץ מצבי רוטציה
-const ROTATION_STATE_FILE = path.join(__dirname, "rotation-states.json");
 
 // ================================================================
 // RUNDAY - מערכת תזמון פוסטים משודרגת עם מניעת כפילויות תאריכים
@@ -15,198 +10,6 @@ const ROTATION_STATE_FILE = path.join(__dirname, "rotation-states.json");
 // 3. וולידציה אוטומטית בעת טעינת פוסטים והעברה לstatus paused במקרה של כפילות
 // 4. בדיקות מדויקות של התנגשות תאריכים לפי סוג התזמון
 // 5. לוגים מפורטים לאיתור בעיות ומעקב אחרי בחירת פוסטים
-// 6. ניהול מספר פוסטים ופרסומים ביום עם חלוקה חכמה
-// ================================================================
-
-// ========== הגדרות פרסום יומי ==========
-// הגדרות נטענות מקובץ daily-settings.json מתיקיית המשתמש הספציפי
-// ניתן לעדכן את ההגדרות בזמן אמת ללא הפסקת המערכת
-let DAILY_SETTINGS = {};
-
-function getSettingsPath() {
-    // קריאת שם השרת
-    const instanceNameFile = './instance-name.txt';
-    if (fs.existsSync(instanceNameFile)) {
-        const hostname = fs.readFileSync(instanceNameFile, 'utf8').trim();
-        const userSettingsPath = `C:/postify/user data/${hostname}/daily-settings.json`;
-        
-        // בדיקה אם קובץ ההגדרות קיים בתיקיית המשתמש
-        if (fs.existsSync(userSettingsPath)) {
-            console.log(`📁 משתמש בהגדרות מתיקיית המשתמש: ${hostname}`);
-            return userSettingsPath;
-        } else {
-            console.log(`⚠️ קובץ הגדרות לא נמצא בתיקיית המשתמש: ${hostname}`);
-            console.log(`💡 הצעה: הרץ את sync-user-data.js לסנכרון הגדרות מהאתר`);
-        }
-    }
-    
-    // ברירת מחדל - קובץ מקומי
-    return './daily-settings.json';
-}
-
-function loadDailySettings() {
-    try {
-        const settingsPath = getSettingsPath();
-        console.log(`📂 טוען הגדרות מ: ${settingsPath}`);
-        
-        const settingsData = fs.readFileSync(settingsPath, 'utf8');
-        DAILY_SETTINGS = JSON.parse(settingsData);
-        console.log('✅ הגדרות יומיות נטענו בהצלחה מקובץ JSON');
-        
-        // הצגת מידע על מקור ההגדרות
-        if (DAILY_SETTINGS.hostname) {
-            console.log(`👤 הגדרות משתמש: ${DAILY_SETTINGS.hostname}`);
-        }
-        if (DAILY_SETTINGS.synced_from_website) {
-            console.log(`🌐 הגדרות סונכרנו מהאתר בתאריך: ${DAILY_SETTINGS.last_updated}`);
-        }
-        
-        // וולידציה של הגדרות
-        if (DAILY_SETTINGS.MAX_POSTS_PER_DAY < 1) {
-            throw new Error("MAX_POSTS_PER_DAY חייב להיות לפחות 1");
-        }
-        if (DAILY_SETTINGS.MAX_PUBLICATIONS_PER_DAY < 1) {
-            throw new Error("MAX_PUBLICATIONS_PER_DAY חייב להיות לפחות 1");
-        }
-        if (DAILY_SETTINGS.MAX_POSTS_PER_DAY > 20) {
-            console.warn("⚠️ אזהרה: מספר גבוה של פוסטים ביום (>20) עלול לגרום לעומס");
-        }
-        
-    } catch (error) {
-        console.log('⚠️ שגיאה בטעינת הגדרות:', error.message);
-        console.log('📋 משתמש בהגדרות ברירת מחדל');
-        console.log('💡 הצעה: בדוק שקובץ daily-settings.json קיים או הרץ sync-user-data.js');
-        DAILY_SETTINGS = {
-            MAX_POSTS_PER_DAY: 5,
-            MAX_PUBLICATIONS_PER_DAY: 15,
-            DELAY_BETWEEN_POSTS_MINUTES: 30,
-            ENABLE_SMART_DISTRIBUTION: true,
-            ENABLE_SABBATH_SHUTDOWN: true,
-            SABBATH_SHUTDOWN_HOURS_BEFORE: 1
-        };
-    }
-}
-
-function updateDailySettings(newSettings) {
-    try {
-        const settingsPath = getSettingsPath();
-        const updatedSettings = { 
-            ...DAILY_SETTINGS, 
-            ...newSettings, 
-            last_updated: new Date().toISOString() 
-        };
-        fs.writeFileSync(settingsPath, JSON.stringify(updatedSettings, null, 2), 'utf8');
-        DAILY_SETTINGS = updatedSettings;
-        console.log('✅ הגדרות יומיות עודכנו בקובץ JSON:', Object.keys(newSettings));
-        return true;
-    } catch (error) {
-        console.log('❌ שגיאה בעדכון הגדרות:', error.message);
-        return false;
-    }
-}
-
-function reloadSettings() {
-    console.log('🔄 טוען מחדש הגדרות מקובץ JSON...');
-    loadDailySettings();
-}
-
-// טעינה ראשונית של הגדרות
-loadDailySettings();
-
-console.log(`📊 הגדרות פרסום יומי (נטען מ-daily-settings.json):
-  📝 מקסימום פוסטים ביום: ${DAILY_SETTINGS.MAX_POSTS_PER_DAY}
-  📢 מקסימום פרסומים ביום: ${DAILY_SETTINGS.MAX_PUBLICATIONS_PER_DAY}
-  🧠 חלוקה חכמה: ${DAILY_SETTINGS.ENABLE_SMART_DISTRIBUTION ? 'מופעלת' : 'כבויה'}
-  ⏱️ השהייה בין פוסטים: ${DAILY_SETTINGS.DELAY_BETWEEN_POSTS_MINUTES} דקות
-  🕯️ כיבוי לשבת: ${DAILY_SETTINGS.ENABLE_SABBATH_SHUTDOWN ? 'מופעל' : 'כבוי'}`);
-
-// הוספת פונקציה לעדכון הגדרות דינמי
-function updateMaxPosts(newMax) {
-    return updateDailySettings({ MAX_POSTS_PER_DAY: newMax });
-}
-
-function updateMaxPublications(newMax) {
-    return updateDailySettings({ MAX_PUBLICATIONS_PER_DAY: newMax });
-}
-
-function updateDelay(newDelay) {
-    return updateDailySettings({ DELAY_BETWEEN_POSTS_MINUTES: newDelay });
-}
-
-// ========== פונקציות כיבוי מחשב לשבת ==========
-
-// פונקציה לחישוב זמן כניסת השבת (קירוב - 18:00 בחורף, 19:00 בקיץ)
-function getSabbathTime() {
-  const now = new Date();
-  const month = now.getMonth() + 1; // חודש 1-12
-  
-  // קירוב לזמני כניסת שבת בישראל (ללא חישוב מדויק של זמנים)
-  // קיץ (אפריל-ספטמבר): 19:00, חורף (אוקטובר-מרץ): 18:00
-  const sabbathHour = (month >= 4 && month <= 9) ? 19 : 18;
-  
-  const sabbathTime = new Date();
-  sabbathTime.setHours(sabbathHour, 0, 0, 0); // כניסת שבת
-  
-  return sabbathTime;
-}
-
-// פונקציה לבדיקה אם צריך לכבות את המחשב לקראת שבת
-function shouldShutdownForSabbath() {
-  const now = new Date();
-  const dayOfWeek = now.getDay(); // 0=ראשון, 5=שישי, 6=שבת
-  
-  // בדיקה רק ביום שישי
-  if (dayOfWeek !== 5) {
-    return { should: false, reason: "לא יום שישי" };
-  }
-  
-  const sabbathTime = getSabbathTime();
-  const oneHourBefore = new Date(sabbathTime.getTime() - 60 * 60 * 1000); // שעה לפני
-  
-  if (now >= oneHourBefore) {
-    const minutesUntilSabbath = Math.round((sabbathTime.getTime() - now.getTime()) / (1000 * 60));
-    return { 
-      should: true, 
-      reason: `שעה לפני כניסת שבת`,
-      minutesUntil: minutesUntilSabbath,
-      sabbathTime: sabbathTime.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })
-    };
-  }
-  
-  return { should: false, reason: "עדיין יותר משעה לכניסת שבת" };
-}
-
-// פונקציה לכיבוי המחשב
-async function shutdownComputer(reason) {
-  const { exec } = require('child_process');
-  
-  console.log(`🕯️ ${reason}`);
-  console.log("💤 כיבוי המחשב לכבוד השבת...");
-  
-  try {
-    // שליחת מייל הודעה על כיבוי לשבת
-    await sendMail(
-      "🕯️ כיבוי אוטומטי לכבוד השבת",
-      `המערכת מבצעת כיבוי אוטומטי לכבוד השבת.\n\nסיבה: ${reason}\nזמן: ${new Date().toLocaleString('he-IL')}\n\nשבת שלום! 🕯️`
-    );
-    
-    console.log("📧 נשלח מייל הודעה על כיבוי לשבת");
-  } catch (e) {
-    console.log("⚠️ לא ניתן לשלוח מייל הודעה: " + e.message);
-  }
-  
-  // השהייה של 10 שניות לסיום תהליכים
-  console.log("⏳ השהייה של 10 שניות לסיום תהליכים...");
-  await new Promise(resolve => setTimeout(resolve, 10000));
-  
-  // כיבוי המחשב (Windows)
-  exec('shutdown /s /t 0', (error) => {
-    if (error) {
-      console.log("❌ שגיאה בכיבוי המחשב: " + error.message);
-    }
-  });
-}
-
 // ================================================================
 
 // === פונקציות למניעת כפילויות תאריכים (לוגיקה חדשה) ===
@@ -353,92 +156,12 @@ function isActivePost(post) {
   return post.status === "active";
 }
 
-// פונקציה לחישוב חלוקה חכמה של פרסומים בין פוסטים
-function calculateSmartDistribution(selectedPosts, maxPublications) {
-  console.log(`🧮 מחשב חלוקה חכמה של ${maxPublications} פרסומים בין ${selectedPosts.length} פוסטים`);
-  
-  const distribution = [];
-  const totalGroups = selectedPosts.reduce((sum, post) => sum + (post.groups?.length || 0), 0);
-  
-  console.log(`📊 סך הכל קבוצות בפוסטים הנבחרים: ${totalGroups}`);
-  
-  if (totalGroups <= maxPublications) {
-    // יש מספיק מקום לכל הקבוצות
-    selectedPosts.forEach(post => {
-      const groupsCount = post.groups?.length || 0;
-      distribution.push({
-        post: post,
-        allowedGroups: groupsCount,
-        originalGroups: groupsCount
-      });
-    });
-    console.log(`✅ יש מספיק מקום לכל הקבוצות (${totalGroups}/${maxPublications})`);
-  } else {
-    // צריך לחלק בצורה חכמה
-    const averagePerPost = Math.floor(maxPublications / selectedPosts.length);
-    const remainder = maxPublications % selectedPosts.length;
-    
-    console.log(`📐 ממוצע לפוסט: ${averagePerPost}, עודף לחלוקה: ${remainder}`);
-    
-    let remainingPublications = maxPublications;
-    let postsWithExtraSlots = remainder;
-    
-    // שלב ראשון: חלוקה בסיסית
-    selectedPosts.forEach((post, index) => {
-      const groupsCount = post.groups?.length || 0;
-      let allowedGroups;
-      
-      if (groupsCount <= averagePerPost) {
-        // הפוסט יש לו פחות קבוצות מהממוצע - לוקח הכל
-        allowedGroups = groupsCount;
-      } else {
-        // הפוסט יש לו יותר מהממוצע - מקבל את הממוצע + אולי עוד אחד
-        allowedGroups = averagePerPost;
-        if (postsWithExtraSlots > 0) {
-          allowedGroups += 1;
-          postsWithExtraSlots--;
-        }
-      }
-      
-      distribution.push({
-        post: post,
-        allowedGroups: allowedGroups,
-        originalGroups: groupsCount
-      });
-      
-      remainingPublications -= allowedGroups;
-      console.log(`📝 פוסט ${post.filename}: ${allowedGroups}/${groupsCount} קבוצות`);
-    });
-    
-    // שלב שני: חלוקת עודפים אם יש
-    if (remainingPublications > 0) {
-      console.log(`📊 נותרו ${remainingPublications} פרסומים לחלוקה`);
-      
-      for (let i = 0; i < distribution.length && remainingPublications > 0; i++) {
-        const item = distribution[i];
-        if (item.allowedGroups < item.originalGroups) {
-          const canAdd = Math.min(remainingPublications, item.originalGroups - item.allowedGroups);
-          item.allowedGroups += canAdd;
-          remainingPublications -= canAdd;
-          console.log(`➕ פוסט ${item.post.filename}: הוסף ${canAdd} קבוצות (סה"כ: ${item.allowedGroups})`);
-        }
-      }
-    }
-  }
-  
-  const totalAllocated = distribution.reduce((sum, item) => sum + item.allowedGroups, 0);
-  console.log(`✅ חלוקה סופית: ${totalAllocated}/${maxPublications} פרסומים מוקצים`);
-  
-  return distribution;
-}
-
-// פונקציה משופרת לבחירת פוסטים ליום עם תמיכה במספר פוסטים וחלוקה חכמה
+// פונקציה לבחירת פוסטים ליום - פוסט אחד בלבד עם עדיפות למתוזמנים
 function selectPostsForDay(allPosts, today = new Date()) {
   const todayStr = today.toISOString().slice(0, 10);
   
-  console.log(`📅 בוחר פוסטים ליום ${todayStr}`);
+  console.log(`📅 בוחר פוסט ליום ${todayStr}`);
   console.log(`📊 סך הכל פוסטים זמינים: ${allPosts.length}`);
-  console.log(`🎯 מטרה: עד ${DAILY_SETTINGS.MAX_POSTS_PER_DAY} פוסטים, עד ${DAILY_SETTINGS.MAX_PUBLICATIONS_PER_DAY} פרסומים`);
   
   // סינון פוסטים מתוזמנים להיום
   const scheduledPosts = allPosts.filter(post => {
@@ -476,36 +199,32 @@ function selectPostsForDay(allPosts, today = new Date()) {
   
   const selectedPosts = [];
   
-  // לוגיקה חדשה: בחירת מספר פוסטים לפי ההגדרה
-  console.log(`📋 מדיניות חדשה: עד ${DAILY_SETTINGS.MAX_POSTS_PER_DAY} פוסטים ביום`);
+  // לוגיקה פשוטה: פוסט אחד בלבד ביום עם עדיפות למתוזמנים
+  console.log(`📋 מדיניות: פרסום פוסט אחד בלבד ביום`);
   
-  // שלב 1: הוספת פוסטים מתוזמנים (עדיפות ראשונה)
-  const postsToAdd = Math.min(validScheduledPosts.length, DAILY_SETTINGS.MAX_POSTS_PER_DAY);
-  for (let i = 0; i < postsToAdd; i++) {
-    selectedPosts.push(validScheduledPosts[i]);
-    console.log(`⏰ נבחר פוסט מתוזמן ${i + 1}: ${validScheduledPosts[i].filename}`);
-  }
-  
-  // שלב 2: השלמה עם פוסטים פעילים אם נשארו מקומות
-  const remainingSlots = DAILY_SETTINGS.MAX_POSTS_PER_DAY - selectedPosts.length;
-  
-  if (remainingSlots > 0 && activePosts.length > 0) {
-    console.log(`📊 נשארו ${remainingSlots} מקומות לפוסטים פעילים`);
+  if (validScheduledPosts.length > 0) {
+    // יש פוסט מתוזמן - פרסם את הראשון (עדיפות ראשונה)
+    selectedPosts.push(validScheduledPosts[0]);
+    console.log(`⏰ נבחר פוסט מתוזמן: ${validScheduledPosts[0].filename}`);
+    if (validScheduledPosts.length > 1) {
+      console.log(`📋 מתעלם מ-${validScheduledPosts.length - 1} פוסטים מתוזמנים נוספים (פוסט אחד בלבד ביום)`);
+    }
+  } else if (activePosts.length > 0) {
+    // אין פוסט מתוזמן - פרסם פוסט פעיל לפי רוטציה מסודרת
     
     // קריאת הפוסט האחרון שפורסם מהקובץ
-    let lastPublishedPosts = [];
+    let lastPublishedPost = null;
     try {
-      const LAST_POSTS_FILE = require("path").join(__dirname, "last-posts.json");
-      if (require("fs").existsSync(LAST_POSTS_FILE)) {
-        const lastPostsData = JSON.parse(require("fs").readFileSync(LAST_POSTS_FILE, "utf-8"));
-        lastPublishedPosts = lastPostsData.posts || [];
-        console.log(`📋 פוסטים אחרונים שפורסמו: ${lastPublishedPosts.join(', ')}`);
+      const LAST_POST_FILE = require("path").join(__dirname, "last-post.txt");
+      if (require("fs").existsSync(LAST_POST_FILE)) {
+        lastPublishedPost = require("fs").readFileSync(LAST_POST_FILE, "utf-8").trim();
+        console.log(`📋 הפוסט האחרון שפורסם: ${lastPublishedPost}`);
       }
     } catch (e) {
-      console.log(`⚠️ לא ניתן לקרוא את הפוסטים האחרונים: ${e.message}`);
+      console.log(`⚠️ לא ניתן לקרוא את הפוסט האחרון: ${e.message}`);
     }
     
-    // מיון הפוסטים הפעילים לפי שם הקובץ ליצירת סדר קבוע
+    // מיון הפוסטים הפעילים לפי שם הקובץ (postX.json) ליצירת סדר קבוע
     const sortedActivePosts = activePosts.sort((a, b) => {
       const numA = parseInt(a.filename.match(/post(\d+)\.json/)?.[1] || '0');
       const numB = parseInt(b.filename.match(/post(\d+)\.json/)?.[1] || '0');
@@ -514,154 +233,36 @@ function selectPostsForDay(allPosts, today = new Date()) {
     
     console.log(`📋 פוסטים פעילים ממוינים: ${sortedActivePosts.map(p => p.filename).join(', ')}`);
     
-    // בחירת פוסטים לפי רוטציה חכמה
-    let startIndex = 0;
-    
-    if (lastPublishedPosts.length > 0) {
+    let selectedPost;
+    if (lastPublishedPost) {
       // מצא את הפוסט האחרון ברשימה הממוינת
-      const lastPost = lastPublishedPosts[lastPublishedPosts.length - 1];
-      const lastIndex = sortedActivePosts.findIndex(p => p.filename === lastPost);
-      
+      const lastIndex = sortedActivePosts.findIndex(p => p.filename === lastPublishedPost);
       if (lastIndex !== -1) {
-        startIndex = (lastIndex + 1) % sortedActivePosts.length;
-        console.log(`🔄 רוטציה: הפוסט האחרון היה ${lastPost} (אינדקס ${lastIndex}), מתחיל מאינדקס ${startIndex}`);
+        // בחר את הפוסט הבא ברוטציה (או חזור להתחלה אם הגענו לסוף)
+        const nextIndex = (lastIndex + 1) % sortedActivePosts.length;
+        selectedPost = sortedActivePosts[nextIndex];
+        console.log(`🔄 רוטציה: הפוסט האחרון היה ${lastPublishedPost} (אינדקס ${lastIndex}), הבא הוא ${selectedPost.filename} (אינדקס ${nextIndex})`);
       } else {
-        console.log(`⚠️ הפוסט האחרון ${lastPost} לא נמצא ברשימה, מתחיל מהראשון`);
+        // הפוסט האחרון לא נמצא ברשימה הנוכחית (אולי נמחק או הועבר לpaused)
+        selectedPost = sortedActivePosts[0];
+        console.log(`⚠️ הפוסט האחרון ${lastPublishedPost} לא נמצא ברשימה, מתחיל מהראשון: ${selectedPost.filename}`);
       }
     } else {
-      console.log(`🆕 אין פוסטים אחרונים רשומים, מתחיל מהראשון`);
+      // אין פוסט אחרון רשום - מתחיל מהראשון
+      selectedPost = sortedActivePosts[0];
+      console.log(`🆕 אין פוסט אחרון רשום, מתחיל מהראשון: ${selectedPost.filename}`);
     }
     
-    // בחירת פוסטים לפי הסדר
-    for (let i = 0; i < remainingSlots; i++) {
-      if (sortedActivePosts.length === 0) break;
-      
-      const currentIndex = (startIndex + i) % sortedActivePosts.length;
-      const selectedPost = sortedActivePosts[currentIndex];
-      
-      // בדיקה שלא נבחר כבר פוסט זה
-      if (!selectedPosts.find(p => p.filename === selectedPost.filename)) {
-        selectedPosts.push(selectedPost);
-        console.log(`🔄 נבחר פוסט פעיל ${i + 1}: ${selectedPost.filename} (אינדקס ${currentIndex})`);
-      }
-    }
-    
-  // אם יש פחות פוסטים ממה שרוצים - לא חוזרים על פוסטים קיימים, פשוט עוצרים בכמות שיש
+    selectedPosts.push(selectedPost);
+    console.log(`🔄 נבחר פוסט פעיל (רוטציה): ${selectedPost.filename}`);
+  } else {
+    // אין פוסטים מתוזמנים ואין פוסטים פעילים
+    console.log(`📋 אין פוסטים זמינים להיום - לא מתוזמנים ולא פעילים`);
   }
   
-  console.log(`📋 פוסטים נבחרים סופיים: ${selectedPosts.map(p => `${p.filename} (${p.status}${p.duplicateRun ? ' - חזרה' : ''})`).join(', ')}`);
+  console.log(`📋 פוסט נבחר סופי: ${selectedPosts.map(p => `${p.filename} (${p.status})`).join(', ')}`);
   console.log(`📊 סה"כ פוסטים להיום: ${selectedPosts.length}`);
-  
-  // חישוב חלוקה חכמה של פרסומים
-  if (DAILY_SETTINGS.ENABLE_SMART_DISTRIBUTION && selectedPosts.length > 0) {
-    const distribution = calculateSmartDistribution(selectedPosts, DAILY_SETTINGS.MAX_PUBLICATIONS_PER_DAY);
-    
-    // עדכון הפוסטים עם החלוקה החכמה
-    selectedPosts.forEach((post, index) => {
-      const distItem = distribution[index];
-      if (distItem && distItem.allowedGroups < post.groups.length) {
-        // שימוש ברוטציה במקום slice רגיל
-        post.limitedGroups = selectGroupsWithRotation(post, distItem.allowedGroups);
-        post.originalGroupsCount = post.groups.length;
-        post.limitedGroupsCount = distItem.allowedGroups;
-        console.log(`📊 פוסט ${post.filename}: מוגבל ל-${distItem.allowedGroups} מתוך ${post.groups.length} קבוצות`);
-        // הרוטציה כבר נשמרת בקובץ הנפרד, לא צריך לשמור כאן
-      }
-    });
-  }
-  
   return selectedPosts;
-}
-
-// פונקציה לניקוי שמות קבוצות לפני הכנסה לגוגל שיטס
-function cleanGroupName(groupName) {
-  if (!groupName) return groupName;
-  
-  let cleaned = groupName
-    // הסרת "| Facebook" בסוף
-    .replace(/\s*\|\s*Facebook\s*$/i, '')
-    // הסרת "Facebook" בכל מקום
-    .replace(/\s*Facebook\s*/gi, '')
-    // הסרת סוגריים עם מספרים ופלוסים כמו (20+) או (5)
-    .replace(/\(\d+\+?\)\s*/g, '')
-    // הסרת pipe symbols מיותרים
-    .replace(/\s*\|\s*/g, ' ')
-    // הסרת רווחים מיותרים
-    .replace(/\s+/g, ' ')
-    // הסרת רווחים בהתחלה ובסוף
-    .trim();
-    
-  return cleaned;
-}
-
-// פונקציות לניהול מצב רוטציה
-function loadRotationStates() {
-  try {
-    if (fs.existsSync(ROTATION_STATE_FILE)) {
-      return JSON.parse(fs.readFileSync(ROTATION_STATE_FILE, "utf-8"));
-    }
-  } catch (e) {
-    console.log(`⚠️ שגיאה בטעינת מצב רוטציה: ${e.message}`);
-  }
-  return {};
-}
-
-function saveRotationStates(states) {
-  try {
-    fs.writeFileSync(ROTATION_STATE_FILE, JSON.stringify(states, null, 2), "utf-8");
-    console.log(`💾 מצבי רוטציה נשמרו ל-rotation-states.json`);
-  } catch (e) {
-    console.log(`⚠️ שגיאה בשמירת מצב רוטציה: ${e.message}`);
-  }
-}
-
-// פונקציה לבחירת קבוצות עם מנגנון רוטציה
-function selectGroupsWithRotation(post, targetCount) {
-  // וידוא שיש מערך קבוצות
-  if (!post.groups || post.groups.length === 0) {
-    return [];
-  }
-  
-  const totalGroups = post.groups.length;
-  
-  // אם צריך פחות או שווה לכמות הכוללת - אין צורך ברוטציה
-  if (targetCount >= totalGroups) {
-    return [...post.groups];
-  }
-  
-  // טעינת מצבי רוטציה מהקובץ הנפרד
-  const rotationStates = loadRotationStates();
-  const postKey = post.filename;
-  
-  // קריאת מצב הרוטציה הקיים או יצירת חדש
-  const rotationState = rotationStates[postKey] || { lastStartIndex: 0, usedCount: 0 };
-  
-  // חישוב נקודת התחלה חדשה (רוטציה)
-  const newStartIndex = (rotationState.lastStartIndex + rotationState.usedCount) % totalGroups;
-  
-  // בחירת קבוצות החל מהנקודה החדשה
-  const selectedGroups = [];
-  for (let i = 0; i < targetCount; i++) {
-    const index = (newStartIndex + i) % totalGroups;
-    selectedGroups.push(post.groups[index]);
-  }
-  
-  // עדכון מצב הרוטציה בקובץ הנפרד
-  rotationStates[postKey] = {
-    lastStartIndex: newStartIndex,
-    usedCount: targetCount,
-    lastUpdated: new Date().toISOString()
-  };
-  
-  // שמירה לקובץ
-  saveRotationStates(rotationStates);
-  
-  console.log(`🔄 רוטציה בפוסט ${post.filename}: התחלה מאינדקס ${newStartIndex}, נבחרו ${targetCount} קבוצות`);
-  if (newStartIndex > 0) {
-    console.log(`   ↳ דילוג על ${newStartIndex} קבוצות ראשונות להוגנות`);
-  }
-  
-  return selectedGroups;
 }
 
 // פונקציה לבדיקה אם פוסט מסתיים היום (עם תמיכה במבנה ישן וחדש)
@@ -716,12 +317,6 @@ function explainExitCode(code) {
 
 // פונקציה לבדיקת עצירה לפי שעה (עם הגנות)
 function shouldStopByHour() {
-  // בדיקה אם יש פרמטר --force-late שעוקף את בדיקת השעה
-  if (process.argv.includes('--force-late')) {
-    console.log("🕒 Force late mode - ignoring hour check");
-    return false;
-  }
-  
   try {
     const israelTime = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Jerusalem' });
     const hour = new Date(israelTime).getHours();
@@ -768,14 +363,8 @@ function updateHeartbeat({ group, postFile, status, index }) {
   try {
     const path = require("path");
     const { spawn, exec } = require("child_process");
-  const logToSheet = require("./log-to-sheets");
-  const config = require("./config.json");
-
-    // בדיקה אם רץ עם פרמטר --force-late
-    if (process.argv.includes('--force-late')) {
-      console.log("🌙 ⚠️  מצב פרסום מאוחר מופעל - עוקף את בדיקת השעה!");
-      console.log("🕒 הפרסום ירוץ גם אחרי שעה 23:00");
-    }
+    const logToSheet = require("./log-to-sheets");
+    const config = require("./config.json");
 
     let instanceName;
     let POSTS_FOLDER;
@@ -801,8 +390,7 @@ function updateHeartbeat({ group, postFile, status, index }) {
     const LOG_FILE = path.join(__dirname, config.logFile);
     const STATE_POST_FILE = path.join(__dirname, "state-post.json");
     const CURRENT_GROUP_NAME_FILE = path.join(__dirname, config.currentGroupFile);
-    const LAST_POST_FILE = path.join(__dirname, "last-post.txt"); // ← לתאימות לאחור
-    const LAST_POSTS_FILE = path.join(__dirname, "last-posts.json"); // ← חדש למספר פוסטים
+    const LAST_POST_FILE = path.join(__dirname, "last-post.txt"); // ← חדש
 
     const logStream = fs.createWriteStream(LOG_FILE, { flags: "a" });
     const log = (text) => {
@@ -814,18 +402,6 @@ function updateHeartbeat({ group, postFile, status, index }) {
 
     const day = new Date().getDay();
     const todayStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-
-    // ========== בדיקת כיבוי לשבת ==========
-    log("🕯️ בודק אם צריך לכבות מחשב לקראת שבת...");
-    const sabbathCheck = shouldShutdownForSabbath();
-    if (sabbathCheck.should) {
-      log(`🕯️ זמן כיבוי לשבת! ${sabbathCheck.reason}`);
-      log(`⏰ כניסת שבת ב-${sabbathCheck.sabbathTime} (עוד ${sabbathCheck.minutesUntil} דקות)`);
-      await shutdownComputer(sabbathCheck.reason);
-      return; // הקוד לא יגיע לכאן בגלל הכיבוי
-    } else {
-      log(`✅ ${sabbathCheck.reason}`);
-    }
 
     // חגי ישראל + ימי זיכרון 2024-2035
     const jewishHolidaysAndMemorials = [
@@ -866,31 +442,14 @@ function updateHeartbeat({ group, postFile, status, index }) {
       const now = new Date();
       const dateStr = now.toLocaleDateString('he-IL', { timeZone: 'Asia/Jerusalem' });
       const timeStr = now.toLocaleTimeString('he-IL', { timeZone: 'Asia/Jerusalem' });
-      
-      // הוספת מידע על הגדרות הפרסום למייל
-      const settingsInfo = `
-📊 הגדרות פרסום יומי:
-• מקסימום פוסטים: ${DAILY_SETTINGS.MAX_POSTS_PER_DAY}
-• מקסימום פרסומים: ${DAILY_SETTINGS.MAX_PUBLICATIONS_PER_DAY}
-• חלוקה חכמה: ${DAILY_SETTINGS.ENABLE_SMART_DISTRIBUTION ? 'מופעלת' : 'כבויה'}
-• השהייה בין פוסטים: ${DAILY_SETTINGS.DELAY_BETWEEN_POSTS_MINUTES} דקות
-      `.trim();
-      
       await sendMail(
         "הפרסום היומי שלך התחיל ✨",
-        `בוקר טוב 😊\n\nהפרסום שלך בקבוצות פייסבוק התחיל\n\nתאריך פרסום: ${dateStr}\n\nשעת התחלה: ${timeStr}\n\n${settingsInfo}\n\nשיהיה לכם יום נפלא!\n\nPostify`,
+        `בוקר טוב 😊\n\nהפרסום שלך בקבוצות פייסבוק התחיל\n\nתאריך פרסום: ${dateStr}\n\nשעת התחלה: ${timeStr}\n\nשיהיה לכם יום נפלא!\n\nPostify`,
         `<div dir="rtl" style="text-align:right;font-family:Arial,sans-serif;">
           בוקר טוב 😊<br><br>
           הפרסום שלך בקבוצות פייסבוק התחיל<br><br>
           <b>תאריך פרסום:</b> ${dateStr}<br>
           <b>שעת התחלה:</b> ${timeStr}<br><br>
-          <div style="background-color:#f0f8ff;padding:10px;border-radius:5px;margin:10px 0;">
-            <b>📊 הגדרות פרסום יומי:</b><br>
-            • מקסימום פוסטים: <b>${DAILY_SETTINGS.MAX_POSTS_PER_DAY}</b><br>
-            • מקסימום פרסומים: <b>${DAILY_SETTINGS.MAX_PUBLICATIONS_PER_DAY}</b><br>
-            • חלוקה חכמה: <b>${DAILY_SETTINGS.ENABLE_SMART_DISTRIBUTION ? 'מופעלת' : 'כבויה'}</b><br>
-            • השהייה בין פוסטים: <b>${DAILY_SETTINGS.DELAY_BETWEEN_POSTS_MINUTES} דקות</b>
-          </div>
           שיהיה לכם יום נפלא!<br>
           <b>Postify</b>
         </div>`
@@ -902,19 +461,9 @@ function updateHeartbeat({ group, postFile, status, index }) {
     }
 
     // בדיקה אם היום שבת, חג או יום זיכרון
-    if (DAILY_SETTINGS.ENABLE_SABBATH_SHUTDOWN) {
-      // מצב רגיל: לא פועל בשבת וחגים
-      if (day === 6 || jewishHolidaysAndMemorials.includes(todayStr)) {
-        log("🛑 שבת, חג או יום זיכרון — אין פרסום היום.");
-        process.exit(0);
-      }
-    } else {
-      // מצב מבוטל הגבלת שבת: פועל כל השבוע כולל שבת, אך לא בחגים
-      if (jewishHolidaysAndMemorials.includes(todayStr)) {
-        log("🛑 חג או יום זיכרון — אין פרסום היום.");
-        process.exit(0);
-      }
-      log("✅ הגבלת שבת מבוטלת: מפרסם כל השבוע כולל שבת (חוץ מחגים).");
+    if (day === 6 || jewishHolidaysAndMemorials.includes(todayStr)) {
+      log("🛑 שבת, חג או יום זיכרון — אין פרסום היום.");
+      process.exit(0);
     }
 
     async function countdown(seconds) {
@@ -923,35 +472,6 @@ function updateHeartbeat({ group, postFile, status, index }) {
         await new Promise(r => setTimeout(r, 1000));
       }
       console.log();
-    }
-
-    // פונקציה להשהייה בין פוסטים עם countdown מפורט
-    async function delayBetweenPosts(postIndex, totalPosts) {
-      if (DAILY_SETTINGS.DELAY_BETWEEN_POSTS_MINUTES <= 0) {
-        log("⚡ אין השהייה בין פוסטים (מוגדר ל-0 דקות)");
-        return;
-      }
-      
-      if (postIndex < totalPosts - 1) { // לא להשהות אחרי הפוסט האחרון
-        const delaySeconds = DAILY_SETTINGS.DELAY_BETWEEN_POSTS_MINUTES * 60;
-        const minutes = Math.floor(delaySeconds / 60);
-        const seconds = delaySeconds % 60;
-        
-        log(`⏱️ השהייה בין פוסטים: ${minutes} דקות ו-${seconds} שניות`);
-        log(`📊 פוסט ${postIndex + 1}/${totalPosts} הושלם, ממתין לפני פוסט ${postIndex + 2}`);
-        
-        // עדכון heartbeat במהלך ההשהייה
-        updateHeartbeat({
-          group: 'delay-between-posts',
-          postFile: `waiting-before-post-${postIndex + 2}`,
-          status: 'waiting',
-          index: postIndex,
-          delayMinutes: DAILY_SETTINGS.DELAY_BETWEEN_POSTS_MINUTES
-        });
-        
-        await countdown(delaySeconds);
-        log(`✅ השהייה הושלמה, עובר לפוסט ${postIndex + 2}`);
-      }
     }
 
     // ============ לולאת פרסום חדשה עם resume, heartbeat וללא דוח יומי ============
@@ -999,29 +519,18 @@ function updateHeartbeat({ group, postFile, status, index }) {
           return;
         }
         
-        // קביעת רשימת הקבוצות לפרסום (מוגבלת או מלאה)
-        const groupsToPublish = post.limitedGroups || post.groups;
-        const isLimited = !!post.limitedGroups;
-        
-        if (isLimited) {
-          log(`📊 פוסט ${post.filename}: מפרסם ב-${groupsToPublish.length} מתוך ${post.originalGroupsCount} קבוצות (הגבלה חכמה)`);
-        } else {
-          log(`📊 פוסט ${post.filename}: מפרסם בכל ${groupsToPublish.length} הקבוצות`);
-        }
-        
-        for (let gi = (pi === startPost ? startGroup : 0); gi < groupsToPublish.length; gi++) {
-          const groupUrl = groupsToPublish[gi];
+        for (let gi = (pi === startPost ? startGroup : 0); gi < post.groups.length; gi++) {
+          const groupUrl = post.groups[gi];
 
-          log(`📢 posting to group(${gi + 1}/${groupsToPublish.length}): ${groupUrl}`);
-          await logToSheet("Publishing to group", "Started", cleanGroupName(groupUrl), `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`);
+          log(`📢 posting to group(${gi + 1}/${post.groups.length}): ${groupUrl}`);
+          await logToSheet("Publishing to group", "Started", groupUrl, `Group ${gi + 1}/${post.groups.length}`);
 
           // לפני ניסיון פרסום
           updateHeartbeat({
             group: groupUrl,
             postFile: post.filename,
             status: 'before',
-            index: gi,
-            postIndex: pi
+            index: gi
           });
 
           let retryCount = 0;
@@ -1059,17 +568,14 @@ function updateHeartbeat({ group, postFile, status, index }) {
                 console.log("⚠️ לא ניתן לכתוב heartbeat:", e.message);
               }
 
-              // העברת פרמטר retry כדי שpost.js לא יתעד בניסיונות ביניים
-              const isRetry = retryCount > 0;
-              const child = spawn("node", ["post.js", groupUrl, post.filename, isRetry ? "--retry" : "--first"], { stdio: "inherit" });
+              const child = spawn("node", ["post.js", groupUrl, post.filename], { stdio: "inherit" });
 
               // --- Timeout ---
-              const TIMEOUT = 5 * 60 * 1000;
-              let timeoutId = setTimeout(async () => {
-                log(`⏰ Timeout! post.js לקח יותר מ־5 דקות. סוגר תהליך וממשיך...`);
+              const TIMEOUT = 13 * 60 * 1000;
+              let timeoutId = setTimeout(() => {
+                log(`⏰ Timeout! post.js לקח יותר מ־13 דקות. סוגר תהליך וממשיך...`);
                 child.kill("SIGKILL");
-                // לא נרשם timeout לגוגל שיטס - רק לוג ומייל
-                sendErrorMail("⏰ Timeout - קבוצה נתקעה", `הקבוצה ${groupUrl} נתקעה ליותר מ־5 דקות ונעצרה אוטומטית.`);
+                sendErrorMail("⏰ Timeout - קבוצה נתקעה", `הקבוצה ${groupUrl} נתקעה ליותר מ־13 דקות ונעצרה אוטומטית.`);
               }, TIMEOUT);
 
               // --- עדכון state ---
@@ -1082,23 +588,11 @@ function updateHeartbeat({ group, postFile, status, index }) {
                 const now = new Date();
                 const groupTime = now.toLocaleTimeString("he-IL", { hour: '2-digit', minute: '2-digit' });
                 
-                // המתן רגע קצר לוודא ששם הקבוצה נשמר
-                await new Promise(r => setTimeout(r, 1000));
-                
                 // קריאת שם הקבוצה
                 let groupName;
                 try {
                   groupName = fs.readFileSync(CURRENT_GROUP_NAME_FILE, "utf-8").trim();
-                  console.log(`🔍 Group name read from file: "${groupName}"`);
-                  console.log(`🔍 Original group URL: "${groupUrl}"`);
-                  
-                  // בדיקה אם שם הקבוצה תקין (לא ריק ולא URL)
-                  if (!groupName || groupName === groupUrl || groupName.startsWith('http')) {
-                    console.log("⚠️ Group name seems invalid, using URL as fallback");
-                    groupName = groupUrl;
-                  }
                 } catch (e) {
-                  console.log(`❌ Failed to read group name file: ${e.message}`);
                   groupName = groupUrl;
                   await sendErrorMail("⚠️ שגיאה בקריאת שם הקבוצה", `לא ניתן לקרוא את שם הקבוצה: ${e.message}`);
                 }
@@ -1106,68 +600,39 @@ function updateHeartbeat({ group, postFile, status, index }) {
                 if (code === 0) {
                   success = true;
                   log(`✅ פורסם בהצלחה בקבוצה: ${groupName}`);
-                  // הרישום ל-logToSheet כבר נעשה בתוך post.js
-                  console.log("✅ Post completed successfully");
-                } else {
-                  // הפרסום נכשל - רושמים שגיאה עם הסבר בעברית
-                  let errorReason = "שגיאה לא מזוהה";
-                  switch (code) {
-                    case 1:
-                      errorReason = "לא נמצא כפתור כתיבה בקבוצה או שגיאה כללית בפרסום";
-                      break;
-                    case 2:
-                      errorReason = "שגיאה בגישה לקבוצה או בטעינת הדף";
-                      break;
-                    case 3:
-                      errorReason = "שגיאה בהעלאת תמונות או וידאו";
-                      break;
-                    case 124:
-                      errorReason = "הפרסום נתקע (timeout) ונעצר אוטומטית";
-                      break;
-                    case 130:
-                      errorReason = "התהליך הופסק ידנית (Ctrl+C)";
-                      break;
-                    case 137:
-                      errorReason = "התהליך הושמד בכוח (killed)";
-                      break;
-                    default:
-                      errorReason = `שגיאה כללית (קוד יציאה: ${code})`;
+                  try {
+                    await logToSheet("Publishing finished", "Success", groupName, groupTime);
+                  } catch (e) {
+                    log("⚠️ שגיאה ברישום לגוגל שיט: " + e.message);
+                    await sendErrorMail("⚠️ שגיאה ברישום לגוגל שיט", `לא ניתן לרשום את התוצאה לגוגל שיט: ${e.message}`);
                   }
-                  
-                  log(`❌ שגיאה בפרסום לקבוצה ${groupName}: ${errorReason}`);
-                  const msg = `❌ הפרסום לקבוצה ${groupName} נכשל.\n\n📄 סיבה: ${errorReason}`;
-                  await sendErrorMail("❌ שגיאה בפרסום לקבוצה", `קובץ: ${post.filename}\nקבוצה: ${groupName}\n${errorReason}`);
-                  // התיעוד לגוגל שיטס נעשה כעת בשכבת post.js רק בניסיון הסופי
-                  if (retryCount < 2) { // שינוי: retryCount < 2 כי כבר העלינו אותו
+                } else {
+                  const reason = explainExitCode(code);
+                  log(`❌ שגיאה בפרסום לקבוצה ${groupName}: ${reason}`);
+                  const msg = `❌ הפרסום לקבוצה ${groupName} נכשל.\n\n📄 סיבה אפשרית: ${reason}`;
+                  await sendErrorMail("❌ שגיאה בפרסום לקבוצה", `קובץ: ${post.filename}\nקבוצה: ${groupName}\n${reason}`);
+                  try {
+                    await logToSheet("Publishing finished", "Failed", groupName, groupTime);
+                  } catch (e) {
+                    log("⚠️ שגיאה ברישום לגוגל שיט: " + e.message);
+                    await sendErrorMail("⚠️ שגיאה ברישום לגוגל שיט", `לא ניתן לרשום את התוצאה לגוגל שיט: ${e.message}`);
+                  }
+                  if (retryCount < 1) {
                     log("🔁 מנסה שוב לפרסם לקבוצה...");
                   } else {
                     log("❌ מעבר לקבוצה הבאה אחרי כישלון");
-                    // רק כעת נתעד לגוגל שיטס את הכישלון הסופי - זהה לpost.js
-                    try {
-                      await logToSheet("Post failed", "Error", cleanGroupName(groupName), errorReason);
-                    } catch (e) {
-                      log("⚠️ שגיאה ברישום לגוגל שיט: " + e.message);
-                      await sendErrorMail("⚠️ שגיאה ברישום לגוגל שיט", `לא ניתן לרשום את התוצאה לגוגל שיט: ${e.message}`);
-                    }
                   }
                 }
 
-                // העלאת הcounter לפני ההשהיה
-                retryCount++;
-
-                // --- השהייה רנדומלית מה-config (רק בין קבוצות, לא בין ניסיונות retry) ---
-                if (!skipDelay && success) { // רק אם הפרסום הצליח (ועוברים לקבוצה הבאה)
+                // --- השהייה רנדומלית מה-config (רק אם לא שולח --now) ---
+                if (!skipDelay) {
                   const delaySec = config.minDelaySec + Math.floor(Math.random() * (config.maxDelaySec - config.minDelaySec + 1));
                   const minutes = Math.floor(delaySec / 60);
                   const seconds = delaySec % 60;
                   log(`⏱ ממתין ${minutes} דקות ו־${seconds} שניות לפני הקבוצה הבאה...`);
                   await countdown(delaySec);
-                } else if (!success && retryCount < 2) {
-                  log(`⚡ דילוג על השהייה (ניסיון חוזר)`);
-                } else if (skipDelay) {
+                } else {
                   log(`⚡ דילוג על השהייה (--now)`);
-                } else if (!success) {
-                  log(`⚡ דילוג על השהייה (כישלון סופי)`);
                 }
 
                 resolve();
@@ -1182,7 +647,7 @@ function updateHeartbeat({ group, postFile, status, index }) {
                 // עדכון heartbeat בשגיאה
                 updateHeartbeat({ group: groupUrl, postFile: post.filename, status: 'error', index: gi });
 
-                if (retryCount < 2) { // שינוי: retryCount < 2 כי כבר העלינו אותו
+                if (retryCount < 1) {
                   log("🔁 מנסה שוב לפרסם לקבוצה...");
                 } else {
                   log("⏭️ מדלג לקבוצה הבאה...");
@@ -1190,62 +655,22 @@ function updateHeartbeat({ group, postFile, status, index }) {
                 resolve();
               });
             });
+            retryCount++;
           }
         }
         // עדכון אחרי שכל הקבוצות פורסמו
         post.lastPublished = new Date().toISOString().slice(0,10);
         post.publishCount = (post.publishCount || 0) + 1;
         
-        fs.writeFileSync(path.join(POSTS_FOLDER, post.filename), JSON.stringify(post, null, 2), "utf-8");
-        
-        // עדכון heartbeat אחרי סיום פוסט
-        updateHeartbeat({
-          group: 'post-completed',
-          postFile: post.filename,
-          status: 'completed',
-          index: pi
-        });
-        
-        log(`✅ פוסט ${post.filename} הושלם (${pi + 1}/${postsToday.length})`);
-        
-        // השהייה בין פוסטים (רק אם זה לא הפוסט האחרון)
-        await delayBetweenPosts(pi, postsToday.length);
-      }
-      
-      // שמירת הפוסטים האחרונים שפורסמו (מעודכן למספר פוסטים)
-      try {
-        const LAST_POSTS_FILE = path.join(__dirname, "last-posts.json");
-        
-        // שמירת כל הפוסטים הפעילים שפורסמו (לרוטציה נכונה)
-        const activePostsPublished = postsToday.filter(p => !p.duplicateRun && isActivePost(p)).map(p => p.filename);
-        
-        const publishedPostsData = {
-          date: todayStr,
-          posts: activePostsPublished, // רק פוסטים פעילים לרוטציה
-          allPosts: postsToday.filter(p => !p.duplicateRun).map(p => p.filename), // כל הפוסטים לרישום
-          totalPosts: postsToday.length,
-          totalPublications: postsToday.reduce((sum, post) => {
-            const groupsCount = post.limitedGroups ? post.limitedGroups.length : (post.groups?.length || 0);
-            return sum + groupsCount;
-          }, 0)
-        };
-        
-        fs.writeFileSync(LAST_POSTS_FILE, JSON.stringify(publishedPostsData, null, 2));
-        log(`📝 נשמרו פוסטים אחרונים לרוטציה: ${publishedPostsData.posts.join(', ')}`);
-        log(`📋 כל הפוסטים שפורסמו: ${publishedPostsData.allPosts.join(', ')}`);
-        log(`📊 סיכום: ${publishedPostsData.totalPosts} פוסטים, ${publishedPostsData.totalPublications} פרסומים`);
-        
-        // שמירה גם לקובץ הישן לתאימות לאחור
-        const LAST_POST_FILE = path.join(__dirname, "last-post.txt");
-        if (publishedPostsData.allPosts.length > 0) {
-          fs.writeFileSync(LAST_POST_FILE, publishedPostsData.allPosts[publishedPostsData.allPosts.length - 1]);
+        // שמירת הפוסט האחרון שפורסם
+        try {
+          fs.writeFileSync(LAST_POST_FILE, post.filename);
+          log(`📝 נשמר פוסט אחרון: ${post.filename}`);
+        } catch (e) {
+          log("⚠️ שגיאה בשמירת הפוסט האחרון: " + e.message);
         }
-      } catch (e) {
-        log("⚠️ שגיאה בשמירת הפוסטים האחרונים: " + e.message);
-      }
-      
-      // בדיקה אם פוסטים צריכים להסתיים
-      for (const post of postsToday) {
+        
+        // בדיקה אם הפוסט צריך להסתיים
         let finished = false;
         if (post.schedule_type === "one-time") {
           finished = true;
@@ -1262,39 +687,19 @@ function updateHeartbeat({ group, postFile, status, index }) {
         if (finished) {
           post.status = "finished";
           log(`✅ פוסט ${post.filename} הסתיים והועבר לסטטוס finished`);
-          fs.writeFileSync(path.join(POSTS_FOLDER, post.filename), JSON.stringify(post, null, 2), "utf-8");
         }
+        
+        fs.writeFileSync(path.join(POSTS_FOLDER, post.filename), JSON.stringify(post, null, 2), "utf-8");
+        
+        // עדכון heartbeat אחרי סיום פוסט
+        updateHeartbeat({
+          group: 'post-completed',
+          postFile: post.filename,
+          status: 'completed',
+          index: pi
+        });
       }
       log("✅ כל הפוסטים להיום פורסמו.");
-
-      // יצירת סיכום יומי מפורט
-      const totalPublications = postsToday.reduce((sum, post) => {
-        return sum + (post.limitedGroups ? post.limitedGroups.length : (post.groups?.length || 0));
-      }, 0);
-      
-      const summaryReport = {
-        date: todayStr,
-        postsPublished: postsToday.length,
-        totalPublications: totalPublications,
-        scheduledPosts: postsToday.filter(p => p.status === 'scheduled').length,
-        activePosts: postsToday.filter(p => p.status === 'active').length,
-        duplicateRuns: postsToday.filter(p => p.duplicateRun).length,
-        settings: {
-          maxPostsPerDay: DAILY_SETTINGS.MAX_POSTS_PER_DAY,
-          maxPublicationsPerDay: DAILY_SETTINGS.MAX_PUBLICATIONS_PER_DAY,
-          smartDistribution: DAILY_SETTINGS.ENABLE_SMART_DISTRIBUTION,
-          delayBetweenPostsMinutes: DAILY_SETTINGS.DELAY_BETWEEN_POSTS_MINUTES
-        }
-      };
-      
-      log(`📊 סיכום יומי:
-        📅 תאריך: ${summaryReport.date}
-        📝 פוסטים שפורסמו: ${summaryReport.postsPublished}/${summaryReport.settings.maxPostsPerDay}
-        📢 פרסומים כולל: ${summaryReport.totalPublications}/${summaryReport.settings.maxPublicationsPerDay}
-        ⏰ מתוזמנים: ${summaryReport.scheduledPosts}
-        🔄 פעילים: ${summaryReport.activePosts}
-        🔁 חזרות: ${summaryReport.duplicateRuns}
-        ⏱️ השהייה בין פוסטים: ${summaryReport.settings.delayBetweenPostsMinutes} דקות`);
 
       // מחיקת סטייט כי סיימנו בהצלחה
       if (fs.existsSync(STATE_POST_FILE)) fs.unlinkSync(STATE_POST_FILE);
@@ -1304,93 +709,6 @@ function updateHeartbeat({ group, postFile, status, index }) {
 
       // סיום יום: log-cost, מייל סגירה, כיבוי (רק אם לא פוסט ספציפי)
       if (!isSpecificPost) {
-        // שליחת מייל סיכום עם הנתונים החדשים
-        try {
-          const now = new Date();
-          const endTimeStr = now.toLocaleTimeString('he-IL', { timeZone: 'Asia/Jerusalem' });
-          
-          const summaryText = `
-📊 סיכום הפרסום היומי:
-
-📅 תאריך: ${summaryReport.date}
-🕒 שעת סיום: ${endTimeStr}
-
-📈 תוצאות:
-• פוסטים שפורסמו: ${summaryReport.postsPublished}/${summaryReport.settings.maxPostsPerDay}
-• סך פרסומים: ${summaryReport.totalPublications}/${summaryReport.settings.maxPublicationsPerDay}
-• פוסטים מתוזמנים: ${summaryReport.scheduledPosts}
-• פוסטים פעילים: ${summaryReport.activePosts}
-${summaryReport.duplicateRuns > 0 ? `• חזרות על פוסטים: ${summaryReport.duplicateRuns}` : ''}
-
-⚙️ הגדרות שהיו פעילות:
-• מקס' פוסטים ביום: ${summaryReport.settings.maxPostsPerDay}
-• מקס' פרסומים ביום: ${summaryReport.settings.maxPublicationsPerDay}
-• חלוקה חכמה: ${summaryReport.settings.smartDistribution ? 'מופעלת' : 'כבויה'}
-• השהייה בין פוסטים: ${summaryReport.settings.delayBetweenPostsMinutes} דקות
-
-הפרסום הושלם בהצלחה! 🎉
-
-Postify
-          `.trim();
-          
-          const summaryHtml = `
-<div dir="rtl" style="text-align:right;font-family:Arial,sans-serif;">
-  <h2 style="color:#4CAF50;">📊 סיכום הפרסום היומי</h2>
-  
-  <div style="background-color:#f9f9f9;padding:15px;border-radius:8px;margin:10px 0;">
-    <b>📅 תאריך:</b> ${summaryReport.date}<br>
-    <b>🕒 שעת סיום:</b> ${endTimeStr}
-  </div>
-  
-  <div style="background-color:#e8f5e8;padding:15px;border-radius:8px;margin:10px 0;">
-    <h3 style="color:#2e7d32;">📈 תוצאות:</h3>
-    • <b>פוסטים שפורסמו:</b> ${summaryReport.postsPublished}/${summaryReport.settings.maxPostsPerDay}<br>
-    • <b>סך פרסומים:</b> ${summaryReport.totalPublications}/${summaryReport.settings.maxPublicationsPerDay}<br>
-    • <b>פוסטים מתוזמנים:</b> ${summaryReport.scheduledPosts}<br>
-    • <b>פוסטים פעילים:</b> ${summaryReport.activePosts}<br>
-    ${summaryReport.duplicateRuns > 0 ? `• <b>חזרות על פוסטים:</b> ${summaryReport.duplicateRuns}<br>` : ''}
-  </div>
-  
-  <div style="background-color:#fff3e0;padding:15px;border-radius:8px;margin:10px 0;">
-    <h3 style="color:#f57c00;">⚙️ הגדרות שהיו פעילות:</h3>
-    • <b>מקס' פוסטים ביום:</b> ${summaryReport.settings.maxPostsPerDay}<br>
-    • <b>מקס' פרסומים ביום:</b> ${summaryReport.settings.maxPublicationsPerDay}<br>
-    • <b>חלוקה חכמה:</b> ${summaryReport.settings.smartDistribution ? 'מופעלת' : 'כבויה'}<br>
-    • <b>השהייה בין פוסטים:</b> ${summaryReport.settings.delayBetweenPostsMinutes} דקות
-  </div>
-  
-  <div style="text-align:center;color:#4CAF50;font-size:18px;margin:20px 0;">
-    <b>הפרסום הושלם בהצלחה! 🎉</b>
-  </div>
-  
-  <div style="text-align:center;color:#666;font-size:14px;">
-    <b>Postify</b>
-  </div>
-</div>
-          `.trim();
-          
-          await sendMail(
-            "הפרסום היומי הושלם בהצלחה ✅",
-            summaryText,
-            summaryHtml
-          );
-          log("📧 מייל סיכום יומי נשלח בהצלחה");
-        } catch (mailError) {
-          log("⚠️ שגיאה בשליחת מייל סיכום: " + mailError.message);
-        }
-        
-        // ========== בדיקה נוספת לכיבוי שבת אחרי הפרסום ==========
-        log("🕯️ בודק שוב אם צריך לכבות מחשב לקראת שבת...");
-        const finalSabbathCheck = shouldShutdownForSabbath();
-        if (finalSabbathCheck.should) {
-          log(`🕯️ זמן כיבוי לשבת אחרי הפרסום! ${finalSabbathCheck.reason}`);
-          log(`⏰ כניסת שבת ב-${finalSabbathCheck.sabbathTime} (עוד ${finalSabbathCheck.minutesUntil} דקות)`);
-          await shutdownComputer(`סיום פרסום - ${finalSabbathCheck.reason}`);
-          return; // הקוד לא יגיע לכאן בגלל הכיבוי
-        } else {
-          log(`✅ אחרי פרסום: ${finalSabbathCheck.reason}`);
-        }
-        
         setTimeout(() => {
           log("📝 מריץ log-cost.bat לפני כיבוי...");
           exec("start /b C:\\postify\\posts\\log-cost.bat", (error) => {
@@ -1408,7 +726,7 @@ Postify
                   log("✅ מייל סגירה נשלח בהצלחה.");
                 }
                 setTimeout(() => {
-                  log("🛑 כיבוי השרת עכשיו...");
+                  log(" כיבוי השרת עכשיו...");
                   exec("shutdown /s /f /t 0", (shutdownError) => {
                     if (shutdownError) {
                       log("❌ שגיאה בכיבוי: " + shutdownError.message);
@@ -1658,7 +976,7 @@ Postify
                 "🔥 שגיאה שנייה – תיקיית פוסטים לא קיימת",
                 `ניסיון 2/3: בעיה חוזרת! המערכת כבר עשתה restart פעם אחת.\n\nשגיאה:\n${lastPostsFolderError ? lastPostsFolderError.message : ""}\n\nIP: ${ip}\n\nהמחשב יחכה 5 דקות ויעשה restart נוסף...`
               );
-              log("� ניסיון 2/3 - המתנה 5 דקות לפני restart...");
+              log("🔥 ניסיון 2/3 - המתנה 5 דקות לפני restart...");
               await new Promise(r => setTimeout(r, 5 * 60000)); // 5 דקות
             } else {
               // ניסיון שלישי - שגיאה חמורה וכיבוי
@@ -1666,7 +984,7 @@ Postify
                 "🚨 שגיאה חמורה – כישלון קריטי במערכת",
                 `ניסיון 3/3 - כישלון חמור!\n\nהמערכת נכשלה 3 פעמים ברציפות לגשת לתיקיית הפוסטים.\nזוהי בעיה קריטית שדורשת התערבות מנהל מערכת.\n\nשגיאה:\n${lastPostsFolderError ? lastPostsFolderError.message : ""}\n\nIP: ${ip}\n\nהמחשב יכבה עכשיו.\n\n=== פעולות מומלצות ===\n1. בדוק את תיקיית הפוסטים\n2. וודא שיש גישה לרשת\n3. בדוק את instance-name.txt\n4. הפעל מחדש ידנית`
               );
-              log("🚨 ניסיון 3/3 - שגיאה חמורה! המחשב יכבה עכשיו...");
+              log("� ניסיון 3/3 - שגיאה חמורה! המחשב יכבה עכשיו...");
               
               // מחיקת קובץ המעקב לאיפוס
               try {
@@ -1762,7 +1080,7 @@ Postify
       pausedDueToDuplicates = validation.pausedDueToDuplicates;
     }
     
-    // בחירת פוסטים להיום עם הגבלת פוסטים ועדיפות למתוזמנים
+    // בחירת פוסטים להיום עם הגבלת 2 פוסטים ועדיפות למתוזמנים
     let postsToday;
     if (specificPostFile) {
       // מצב פוסט ספציפי - לא מפעילים וולידציה או בחירה, פשוט מפרסמים את הפוסט
@@ -1777,7 +1095,7 @@ Postify
       postsToday = selectPostsForDay(validatedPosts, today);
     }
     
-    // דוח יומי מעודכן עם המידע החדש
+    // דוח יומי - הוספת לוג על פוסטים שמסתיימים היום
     if (!specificPostFile) {
       const endingPosts = validatedPosts.filter(post => isPostEndingToday(post, today));
       if (endingPosts.length > 0) {
@@ -1789,48 +1107,27 @@ Postify
         log(`⚠️ פוסטים שהועברו ל-paused בגלל כפילויות: ${pausedDueToDuplicates.map(p => p.filename).join(', ')}`);
       }
       
-      // דוח מפורט על הפוסטים הנבחרים
-      log(`📋 פוסטים נבחרים להיום: ${postsToday.map(p => {
-        const groupsInfo = p.limitedGroups ? `${p.limitedGroups.length}/${p.originalGroupsCount}` : `${p.groups?.length || 0}`;
-        return `${p.filename} (${p.status}, ${groupsInfo} קבוצות${p.duplicateRun ? ', חזרה' : ''})`;
-      }).join(', ')}`);
+      log(`📋 פוסטים נבחרים להיום: ${postsToday.map(p => `${p.filename} (${p.status})`).join(', ')}`);
+      log(`📊 סך הכל: ${postsToday.length} פוסטים`);
       
-      const totalGroups = postsToday.reduce((sum, post) => {
-        return sum + (post.limitedGroups ? post.limitedGroups.length : (post.groups?.length || 0));
-      }, 0);
-      
-      log(`📊 סה"כ פוסטים: ${postsToday.length}/${DAILY_SETTINGS.MAX_POSTS_PER_DAY}`);
-      log(`📊 סה"כ פרסומים: ${totalGroups}/${DAILY_SETTINGS.MAX_PUBLICATIONS_PER_DAY}`);
-      
-      const scheduledCount = postsToday.filter(p => p.status === 'scheduled').length;
-      const activeCount = postsToday.filter(p => p.status === 'active').length;
-      const duplicateCount = postsToday.filter(p => p.duplicateRun).length;
-      
-      log(`📊 פילוח: ${scheduledCount} מתוזמנים, ${activeCount} פעילים${duplicateCount > 0 ? `, ${duplicateCount} חזרות` : ''}`);
-      
-      const totalAvailable = validatedPosts.filter(p => p.status === 'scheduled' || p.status === 'active').length;
-      log(`🔢 סה"כ פוסטים זמינים (פעילים + מתוזמנים): ${totalAvailable}`);
-      log(`📋 מדיניות: עד ${DAILY_SETTINGS.MAX_POSTS_PER_DAY} פוסטים ועד ${DAILY_SETTINGS.MAX_PUBLICATIONS_PER_DAY} פרסומים ביום`);
+      if (!specificPostFile) {
+        const scheduledCount = postsToday.filter(p => p.status === 'scheduled').length;
+        const activeCount = postsToday.filter(p => p.status === 'active').length;
+        const totalAvailable = validatedPosts.filter(p => p.status === 'scheduled' || p.status === 'active').length;
+        log(`📊 פילוח: ${scheduledCount} מתוזמנים, ${activeCount} פעילים`);
+        log(`🔢 סה"כ פוסטים זמינים (פעילים + מתוזמנים): ${totalAvailable}`);
+        log(`📋 מדיניות: פרסום פוסט אחד בלבד ביום עם עדיפות למתוזמנים`);
+      }
     } else {
       log(`📁 מפרסם פוסט ספציפי: ${specificPostFile} (${postsToday[0]?.status || 'לא ידוע'})`);
     }
     
-    // --- רישום פוסטים נבחרים לשיטס עם מידע מפורט ---
+    // --- רישום פוסטים נבחרים לשיטס ---
     if (postsToday.length > 0) {
-      const totalPublications = postsToday.reduce((sum, post) => {
-        return sum + (post.limitedGroups ? post.limitedGroups.length : (post.groups?.length || 0));
-      }, 0);
-      
-      const selectedPostsInfo = postsToday.map(p => {
-        const groupsInfo = p.limitedGroups ? `${p.limitedGroups.length}/${p.originalGroupsCount}` : `${p.groups?.length || 0}`;
-        return `${p.filename}(${groupsInfo})`;
-      }).join(', ');
-      
-      const detailsInfo = `${postsToday.length} פוסטים, ${totalPublications} פרסומים: ${selectedPostsInfo}`;
-      
+      const selectedPostsInfo = postsToday.map(p => `${p.filename} (${p.status})`).join(', ');
       try {
-        await logToSheet("Daily Posts Selected", "Info", "", detailsInfo);
-        log(`📊 נרשם לשיטס: ${detailsInfo}`);
+        await logToSheet("Daily Posts Selected", "Info", "", `פוסטים נבחרים: ${selectedPostsInfo}`);
+        log(`📊 נרשם לשיטס: פוסטים נבחרים - ${selectedPostsInfo}`);
       } catch (e) {
         log(`⚠️ שגיאה ברישום פוסטים נבחרים לשיטס: ${e.message}`);
       }

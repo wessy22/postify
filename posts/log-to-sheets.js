@@ -159,6 +159,27 @@ async function ensureConditionalFormattingOnce() {
   }
 }
 
+// פונקציה לניקוי שמות קבוצות
+function cleanGroupName(groupName) {
+  if (!groupName) return groupName;
+  
+  let cleaned = groupName
+    // הסרת "| Facebook" בסוף
+    .replace(/\s*\|\s*Facebook\s*$/i, '')
+    // הסרת "Facebook" בכל מקום
+    .replace(/\s*Facebook\s*/gi, '')
+    // הסרת סוגריים עם מספרים ופלוסים כמו (20+) או (5)
+    .replace(/\(\d+\+?\)\s*/g, '')
+    // הסרת pipe symbols מיותרים
+    .replace(/\s*\|\s*/g, ' ')
+    // הסרת רווחים מיותרים
+    .replace(/\s+/g, ' ')
+    // הסרת רווחים בהתחלה ובסוף
+    .trim();
+    
+  return cleaned;
+}
+
 // הוספת postName כפרמטר חמישי
 async function logToSheet(action, status, group = '', notes = '', postName = '', attempt = 1) {
   try {
@@ -172,6 +193,9 @@ async function logToSheet(action, status, group = '', notes = '', postName = '',
     await getOrCreateSheet(dateSheetName);
     await ensureConditionalFormattingOnce();
 
+    // ניקוי שם הקבוצה לפני הכנסה לשיט
+    const cleanedGroup = cleanGroupName(group);
+
 
     await sheets.spreadsheets.values.append({
       spreadsheetId,
@@ -179,7 +203,7 @@ async function logToSheet(action, status, group = '', notes = '', postName = '',
       valueInputOption: 'RAW',
       insertDataOption: 'INSERT_ROWS',
       resource: {
-        values: [[timestamp, action, status, group, notes, postName]],
+        values: [[timestamp, action, status, cleanedGroup, notes, postName]],
       },
       auth,
     });

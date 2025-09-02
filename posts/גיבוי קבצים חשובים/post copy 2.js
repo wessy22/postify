@@ -1,10 +1,10 @@
-const { sendErrorMail } = require("./mailer");
+const { sendErrorMail } = require("../mailer");
 const puppeteer = require("puppeteer-core");
 const { execSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const config = require("./config.json");
+const config = require("../config.json");
 
 async function runWithTimeout(fn, ms = 12 * 60 * 1000) {
   let timeout;
@@ -26,10 +26,9 @@ try {
 // קריאת פרמטרים מהפקודה
 const groupUrl = process.argv[2];
 const jsonFileName = process.argv[3];
-const isRetryMode = process.argv[4] === "--retry"; // האם זה ניסיון חוזר
 
 if (!groupUrl || !jsonFileName) {
-  console.error("❌ Usage: node post.js <groupUrl> <jsonFileName> [--retry|--first]");
+  console.error("❌ Usage: node post.js <groupUrl> <jsonFileName>");
   process.exit(1);
 }
 
@@ -44,7 +43,7 @@ const postText = postData.text;
 
 const logToSheet = async (...args) => {
   try {
-    const fn = require('./log-to-sheets');
+    const fn = require('../log-to-sheets');
     await fn(...args);
   } catch (e) {
     console.error('⚠️ Failed to log to Google Sheet:', e.message);
@@ -443,10 +442,7 @@ if (!composerFound) {
         const debugPath = `C:\\temp\\composer-not-found-${Date.now()}.png`;
         await page.screenshot({ path: debugPath });
         console.log("❌ Composer not found after all attempts. Screenshot saved:", debugPath);
-        // תיעוד לגוגל שיטס רק אם זה לא ניסיון חוזר
-        if (!isRetryMode) {
-          await logToSheet('Composer not found', 'Error', groupUrl, `לא נמצא כפתור "כאן כותבים" גם אחרי רענון, המתנה וגלילה. Screenshot: ${debugPath}`, postData.title || '');
-        }
+        await logToSheet('Composer not found', 'Error', groupUrl, `לא נמצא כפתור "כאן כותבים" גם אחרי רענון, המתנה וגלילה. Screenshot: ${debugPath}`, postData.title || '');
         await sendErrorMail("❌ Composer not found", `לא נמצא composer בקבוצה: ${groupUrl}\nScreenshot: ${debugPath}`);
         await browser.close();
         process.exit(1); // יציאה עם קוד שגיאה
@@ -570,10 +566,7 @@ if (!composerFound) {
 
     if (!publishClicked) {
       console.log("❌ Publish button not found");
-      // תיעוד לגוגל שיטס רק אם זה לא ניסיון חוזר
-      if (!isRetryMode) {
-        await logToSheet('Publish button not found', 'Error', groupUrl, 'לא נמצא כפתור פרסום', postData.title || '');
-      }
+      await logToSheet('Publish button not found', 'Error', groupUrl, 'לא נמצא כפתור פרסום', postData.title || '');
       await browser.close();
       process.exit(1);
     }
@@ -596,10 +589,7 @@ if (!composerFound) {
         
         if (errorMessages.length > 0) {
           console.log("❌ Error messages found:", errorMessages);
-          // תיעוד לגוגל שיטס רק אם זה לא ניסיון חוזר
-          if (!isRetryMode) {
-            await logToSheet('Publishing failed', 'Error', groupUrl, `הודעות שגיאה: ${errorMessages.join(', ')}`, postData.title || '');
-          }
+          await logToSheet('Publishing failed', 'Error', groupUrl, `הודעות שגיאה: ${errorMessages.join(', ')}`, postData.title || '');
           await browser.close();
           process.exit(1);
         } else {
@@ -613,10 +603,7 @@ if (!composerFound) {
             console.log("✅ Dialog closed after additional wait - publish successful");
           } else {
             console.log("❌ Dialog still open after total 60 seconds - assuming failure");
-            // תיעוד לגוגל שיטס רק אם זה לא ניסיון חוזר
-            if (!isRetryMode) {
-              await logToSheet('Publishing timeout', 'Error', groupUrl, 'הדיאלוג לא נסגר תוך 60 שניות אחרי הפרסום', postData.title || '');
-            }
+            await logToSheet('Publishing timeout', 'Error', groupUrl, 'הדיאלוג לא נסגר תוך 60 שניות אחרי הפרסום', postData.title || '');
             await browser.close();
             process.exit(1);
           }
@@ -624,10 +611,7 @@ if (!composerFound) {
       }
     } catch (err) {
       console.log("❌ Error checking publish success:", err.message);
-      // תיעוד לגוגל שיטס רק אם זה לא ניסיון חוזר
-      if (!isRetryMode) {
-        await logToSheet('Error checking publish', 'Error', groupUrl, `שגיאה בבדיקת הצלחת הפרסום: ${err.message}`, postData.title || '');
-      }
+      await logToSheet('Error checking publish', 'Error', groupUrl, `שגיאה בבדיקת הצלחת הפרסום: ${err.message}`, postData.title || '');
       await browser.close();
       process.exit(1);
     }
@@ -661,10 +645,7 @@ if (!composerFound) {
 
   } catch (err) {
     console.error("❌ Error:", err.message);
-    // תיעוד לגוגל שיטס רק אם זה לא ניסיון חוזר
-    if (!isRetryMode) {
-      await logToSheet('Post failed', 'Error', groupName || groupUrl, `שגיאה כללית: ${err.message}`, postData.title || '');
-    }
+    await logToSheet('Post failed', 'Error', groupName || groupUrl, `שגיאה כללית: ${err.message}`, postData.title || '');
     if (browser) await browser.close();
 
     const message = [
@@ -690,7 +671,7 @@ async function closeChromeProcesses() {
 }
 
 // פונקציית ריטריי
-async function runWithRetry(maxRetries = 3, logToSheetOnFailure = true) {
+async function runWithRetry(maxRetries = 3) {
   let attempt = 0;
   let lastError = null;
   
@@ -705,29 +686,25 @@ async function runWithRetry(maxRetries = 3, logToSheetOnFailure = true) {
         console.error(`❌ net::ERR_ABORTED – ניסיון ${attempt}/${maxRetries}`);
         await closeChromeProcesses();
         if (attempt >= maxRetries) {
-          // כישלון סופי אחרי כל הניסיונות - תיעוד לגוגל שיטס רק אם מותר
-          if (logToSheetOnFailure) {
-            await logToSheet('Post failed', 'Error', groupUrl, `נכשל אחרי ${maxRetries} ניסיונות - net::ERR_ABORTED`, postData.title || '');
-          }
+          // כישלון סופי אחרי כל הניסיונות - תיעוד לגוגל שיטס
+          await logToSheet('Post failed', 'Error', groupUrl, `נכשל אחרי ${maxRetries} ניסיונות - net::ERR_ABORTED`, postData.title || '');
           await sendErrorMail("❌ שגיאה net::ERR_ABORTED", `נכשל 3 פעמים בקבוצה: ${groupUrl}`);
           return process.exit(1);
         }
-        // ללא השהיה בין ניסיונות retry של אותה קבוצה
+        await new Promise(r => setTimeout(r, 5000)); // המתן 5 שניות בין ניסיונות
       } else {
-        // שגיאה אחרת - main() כבר תיעד את השגיאה ושלח מייל (רק אם מותר)
+        // שגיאה אחרת - main() כבר תיעד את השגיאה ושלח מייל
         return process.exit(1);
       }
     }
   }
 }
 
-// הפעל את הריטריי במקום ה־IIFE - בניסיון ראשון מותר לתעד, בניסיונות חוזרים לא
-runWithTimeout(() => runWithRetry(3, !isRetryMode), 12 * 60 * 1000)
+// הפעל את הריטריי במקום ה־IIFE
+runWithTimeout(runWithRetry, 12 * 60 * 1000)
   .catch(async err => {
-    // תיעוד טיימאווט לגוגל שיטס רק אם זה לא ניסיון חוזר
-    if (!isRetryMode) {
-      await logToSheet('Post failed', 'Error', groupUrl, `טיימאווט - עברו 12 דקות: ${err.message}`, postData.title || '');
-    }
+    // תיעוד טיימאווט לגוגל שיטס
+    await logToSheet('Post failed', 'Error', groupUrl, `טיימאווט - עברו 12 דקות: ${err.message}`, postData.title || '');
     await sendErrorMail("פוסט נתקע", `Timeout - עברו 12 דקות בפוסט: ${groupUrl}\n${err.message}`);
     process.exit(1);
   });

@@ -1061,7 +1061,8 @@ function updateHeartbeat({ group, postFile, status, index }) {
 
               // העברת פרמטר retry כדי שpost.js לא יתעד בניסיונות ביניים
               const isRetry = retryCount > 0;
-              const child = spawn("node", ["post.js", groupUrl, post.filename, isRetry ? "--retry" : "--first"], { stdio: "inherit" });
+              const groupPostIdentifier = `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`;
+              const child = spawn("node", ["post.js", groupUrl, post.filename, isRetry ? "--retry" : "--first", groupPostIdentifier], { stdio: "inherit" });
 
               // --- Timeout ---
               const TIMEOUT = 5 * 60 * 1000;

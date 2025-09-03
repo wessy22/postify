@@ -27,9 +27,10 @@ try {
 const groupUrl = process.argv[2];
 const jsonFileName = process.argv[3];
 const isRetryMode = process.argv[4] === "--retry"; // האם זה ניסיון חוזר
+const groupPostIdentifier = process.argv[5] || ""; // מזהה קבוצה/פוסט
 
 if (!groupUrl || !jsonFileName) {
-  console.error("❌ Usage: node post.js <groupUrl> <jsonFileName> [--retry|--first]");
+  console.error("❌ Usage: node post.js <groupUrl> <jsonFileName> [--retry|--first] [groupPostIdentifier]");
   process.exit(1);
 }
 
@@ -647,9 +648,10 @@ if (!composerFound) {
 
     // רישום הצלחה ל־logToSheet רק אם הפרסום הצליח
     if (publishSuccess) {
-      const now = new Date();
-      const time = now.toLocaleTimeString("he-IL", { hour: '2-digit', minute: '2-digit' });
-      await logToSheet('Publishing finished', 'Success', groupName, `נוסח בהצלחה בשעה ${time}`, postData.title || '');
+      if (!isRetryMode) {
+        const notesText = groupPostIdentifier || `נוסח בהצלחה בשעה ${new Date().toLocaleTimeString("he-IL", { hour: '2-digit', minute: '2-digit' })}`;
+        await logToSheet('Publishing finished', 'Success', groupName, notesText, postData.title || '');
+      }
       console.log("✅ Post published successfully");
     }
 
@@ -663,7 +665,8 @@ if (!composerFound) {
     console.error("❌ Error:", err.message);
     // תיעוד לגוגל שיטס רק אם זה לא ניסיון חוזר
     if (!isRetryMode) {
-      await logToSheet('Post failed', 'Error', groupName || groupUrl, `שגיאה כללית: ${err.message}`, postData.title || '');
+      const notesText = groupPostIdentifier || `שגיאה כללית: ${err.message}`;
+      await logToSheet('Post failed', 'Error', groupName || groupUrl, notesText, postData.title || '');
     }
     if (browser) await browser.close();
 

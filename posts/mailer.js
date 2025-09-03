@@ -4,8 +4,8 @@ const path = require("path");
 const os = require("os");
 const config = require("./email-config");
 
-// דגל זמני להשבתת מיילים (בגלל מגבלת Gmail)
-const DISABLE_EMAILS = false; // שנה ל-false כדי להפעיל מחדש
+// דגל זמני- להשבתת מיילים (בגלל מגבלת Gmail)
+const DISABLE_EMAILS = false; // שנה ל-true כדי להשבית מחדש
 
 const transporter = nodemailer.createTransport({
   service: "gmail",

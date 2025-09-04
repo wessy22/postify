@@ -1013,7 +1013,7 @@ function updateHeartbeat({ group, postFile, status, index }) {
           const groupUrl = groupsToPublish[gi];
 
           log(`📢 posting to group(${gi + 1}/${groupsToPublish.length}): ${groupUrl}`);
-          await logToSheet("Publishing to group", "Started", cleanGroupName(groupUrl), `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`);
+          await logToSheet("Publishing to group", "Started", cleanGroupName(groupUrl), `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`, post.title || post.filename);
 
           // לפני ניסיון פרסום
           updateHeartbeat({
@@ -1072,7 +1072,19 @@ function updateHeartbeat({ group, postFile, status, index }) {
               let timeoutId = setTimeout(async () => {
                 log(`⏰ Timeout! post.js לקח יותר מ־5 דקות. סוגר תהליך וממשיך...`);
                 child.kill("SIGKILL");
-                // לא נרשם timeout לגוגל שיטס - רק לוג ומייל
+                
+                // תיעוד timeout לגוגל שיטס אם זה הניסיון הסופי
+                if (retryCount >= 1) { // הניסיון הסופי
+                  try {
+                    const groupName = fs.readFileSync(CURRENT_GROUP_NAME_FILE, "utf-8").trim();
+                    await logToSheet("Post failed", "Error", cleanGroupName(groupName), `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`, post.title || post.filename, "הפרסום נתקע (timeout) ונעצר אוטומטית");
+                    log("📊 Timeout נרשם לגוגל שיטס");
+                  } catch (e) {
+                    log("⚠️ שגיאה ברישום timeout לגוגל שיט: " + e.message);
+                  }
+                }
+                
+                // שליחת מייל רק עבור timeout
                 sendErrorMail("⏰ Timeout - קבוצה נתקעה", `הקבוצה ${groupUrl} נתקעה ליותר מ־5 דקות ונעצרה אוטומטית.`);
               }, TIMEOUT);
 
@@ -1110,47 +1122,66 @@ function updateHeartbeat({ group, postFile, status, index }) {
                 if (code === 0) {
                   success = true;
                   log(`✅ פורסם בהצלחה בקבוצה: ${groupName}`);
-                  // הרישום ל-logToSheet כבר נעשה בתוך post.js
+                  // רישום הצלחה לגוגל שיטס תמיד (בלי קשר לניסיון)
+                  try {
+                    const notesText = `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`;
+                    await logToSheet('Publishing finished', 'Success', cleanGroupName(groupName), notesText, post.title || post.filename);
+                    log("📊 הצלחה נרשמה לגוגל שיטס");
+                  } catch (e) {
+                    log("⚠️ שגיאה ברישום הצלחה לגוגל שיט: " + e.message);
+                  }
                   console.log("✅ Post completed successfully");
                 } else {
                   // הפרסום נכשל - רושמים שגיאה עם הסבר בעברית
                   let errorReason = "שגיאה לא מזוהה";
-                  switch (code) {
-                    case 1:
-                      errorReason = "לא נמצא כפתור כתיבה בקבוצה או שגיאה כללית בפרסום";
-                      break;
-                    case 2:
-                      errorReason = "שגיאה בגישה לקבוצה או בטעינת הדף";
-                      break;
-                    case 3:
-                      errorReason = "שגיאה בהעלאת תמונות או וידאו";
-                      break;
-                    case 124:
-                      errorReason = "הפרסום נתקע (timeout) ונעצר אוטומטית";
-                      break;
-                    case 130:
-                      errorReason = "התהליך הופסק ידנית (Ctrl+C)";
-                      break;
-                    case 137:
-                      errorReason = "התהליך הושמד בכוח (killed)";
-                      break;
-                    default:
-                      errorReason = `שגיאה כללית (קוד יציאה: ${code})`;
+                  
+                  // במקרה שבו code הוא null - סימן לתהליך שנהרג או timeout
+                  if (code === null) {
+                    errorReason = "התהליך נהרג או נתקע (timeout/killed)";
+                  } else {
+                    switch (code) {
+                      case 1:
+                        errorReason = "לא נמצא כפתור כתיבה בקבוצה או שגיאה כללית בפרסום";
+                        break;
+                      case 2:
+                        errorReason = "שגיאה בגישה לקבוצה או בטעינת הדף";
+                        break;
+                      case 3:
+                        errorReason = "שגיאה בהעלאת תמונות או וידאו";
+                        break;
+                      case 124:
+                        errorReason = "הפרסום נתקע (timeout) ונעצר אוטומטית";
+                        break;
+                      case 130:
+                        errorReason = "התהליך הופסק ידנית (Ctrl+C)";
+                        break;
+                      case 137:
+                        errorReason = "התהליך הושמד בכוח (killed)";
+                        break;
+                      default:
+                        errorReason = `שגיאה כללית (קוד יציאה: ${code})`;
+                    }
                   }
                   
                   log(`❌ שגיאה בפרסום לקבוצה ${groupName}: ${errorReason}`);
-                  // מייל שגיאה נשלח מתוך post.js בניסיון הסופי - לא נשלח כאן
-                  // התיעוד לגוגל שיטס נעשה כעת בשכבת post.js רק בניסיון הסופי
+                  
                   if (retryCount < 2) { // שינוי: retryCount < 2 כי כבר העלינו אותו
                     log("🔁 מנסה שוב לפרסם לקבוצה...");
                   } else {
-                    log("❌ מעבר לקבוצה הבאה אחרי כישלון");
-                    // רק תיעוד נוסף לגוגל שיטס (אם לא נעשה ב-post.js)
+                    log("❌ מעבר לקבוצה הבאה אחרי כישלון סופי");
+                    // תיעוד השגיאה לגוגל שיטס בניסיון הסופי
                     try {
-                      await logToSheet("Post failed", "Error", cleanGroupName(groupName), errorReason);
+                      await logToSheet("Post failed", "Error", cleanGroupName(groupName), `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`, post.title || post.filename, errorReason);
+                      log("📊 שגיאה נרשמה לגוגל שיטס");
                     } catch (e) {
                       log("⚠️ שגיאה ברישום לגוגל שיט: " + e.message);
                       await sendErrorMail("⚠️ שגיאה ברישום לגוגל שיט", `לא ניתן לרשום את התוצאה לגוגל שיט: ${e.message}`);
+                    }
+                    // שליחת מייל שגיאה
+                    try {
+                      await sendErrorMail("❌ שגיאה בפרסום פוסט", `הפרסום נכשל בקבוצה ${groupName}. סיבה: ${errorReason}`);
+                    } catch (e) {
+                      log("⚠️ שגיאה בשליחת מייל שגיאה: " + e.message);
                     }
                   }
                 }
@@ -1187,8 +1218,23 @@ function updateHeartbeat({ group, postFile, status, index }) {
                 if (retryCount < 2) { // שינוי: retryCount < 2 כי כבר העלינו אותו
                   log("🔁 מנסה שוב לפרסם לקבוצה...");
                 } else {
-                  log("⏭️ מדלג לקבוצה הבאה...");
-                  // מייל שגיאה יישלח מתוך post.js - לא כאן
+                  log("⏭️ מדלג לקבוצה הבאה אחרי שגיאת תהליך...");
+                  
+                  // תיעוד שגיאת תהליך לגוגל שיטס בניסיון הסופי
+                  try {
+                    const groupName = fs.readFileSync(CURRENT_GROUP_NAME_FILE, "utf-8").trim();
+                    await logToSheet("Post failed", "Error", cleanGroupName(groupName), `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`, post.title || post.filename, `שגיאה בהרצת post.js: ${error.message}`);
+                    log("📊 שגיאת תהליך נרשמה לגוגל שיטס");
+                  } catch (e) {
+                    log("⚠️ שגיאה ברישום שגיאת תהליך לגוגל שיט: " + e.message);
+                  }
+                  
+                  // שליחת מייל שגיאה
+                  try {
+                    await sendErrorMail("❌ שגיאה בהרצת post.js", `שגיאה בהרצת post.js: ${error.message}`);
+                  } catch (e) {
+                    log("⚠️ שגיאה בשליחת מייל שגיאה: " + e.message);
+                  }
                 }
                 resolve();
               });

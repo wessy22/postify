@@ -54,10 +54,10 @@ const logToSheet = async (...args) => {
     const fn = require('./log-to-sheets');
     // אם יש שגיאה, הוסף אותה לעמודה G (error log) בעברית בלבד
     if (args[1] === 'Error') {
-      // args: [event, status, group, reason, title]
-      const errorLog = (global.__errorReason || args[3] || "שגיאה לא ידועה").replace(/[^א-ת0-9 .,:;\-]/g, "");
+      // args: [event, status, group, notes, postName, errorReason]
+      const errorLog = (args[5] || global.__errorReason || args[3] || "שגיאה לא ידועה").replace(/[^א-ת0-9 .,:;\-()]/g, "");
       // הוספת הערך לעמודה G
-      await fn(...args, errorLog);
+      await fn(...args.slice(0, 5), errorLog);
     } else {
       await fn(...args);
     }
@@ -458,10 +458,8 @@ if (!composerFound) {
         const debugPath = `C:\\temp\\composer-not-found-${Date.now()}.png`;
         await page.screenshot({ path: debugPath });
         console.log("❌ Composer not found after all attempts. Screenshot saved:", debugPath);
-        // תיעוד לגוגל שיטס רק אם זה לא ניסיון חוזר
-        if (!isRetryMode) {
-          await logToSheet('Composer not found', 'Error', groupUrl, `לא נמצא כפתור "כאן כותבים" גם אחרי רענון, המתנה וגלילה. Screenshot: ${debugPath}`, postData.title || '');
-        }
+        // תיעוד לגוגל שיטס - נשלח מ-run-day.js בכל המקרים
+        // אין צורך לכתוב כאן כדי למנוע כפילויות
   global.__errorReason = `לא נמצא composer בקבוצה: ${groupUrl} (Screenshot: ${debugPath})`;
   await browser.close();
   process.exit(1); // יציאה עם קוד שגיאה
@@ -613,11 +611,8 @@ if (!composerFound) {
     
     console.log("GROUP_NAME_START" + groupName + "GROUP_NAME_END");
 
-    // רישום הצלחה ל־logToSheet תמיד (לא רק אם publishSuccess)
-    if (!isRetryMode) {
-      const notesText = groupPostIdentifier || `נוסח בהצלחה בשעה ${new Date().toLocaleTimeString("he-IL", { hour: '2-digit', minute: '2-digit' })}`;
-      await logToSheet('Publishing finished', 'Success', groupName, notesText, postData.title || '');
-    }
+    // רישום הצלחה ל־logToSheet - נשלח מ-run-day.js בכל המקרים
+    // אין צורך לכתוב כאן כדי למנוע כפילויות
     console.log("✅ Post published successfully");
 
     // שמירת שם הקבוצה העדכני לקובץ
@@ -662,10 +657,8 @@ async function runOnce() {
     await main();
     process.exit(0);
   } catch (err) {
-    // תיעוד טיימאווט או שגיאה כללית
-    if (!isRetryMode) {
-      await logToSheet('Post failed', 'Error', groupUrl, `שגיאה כללית או טיימאוט: ${err.message}`, postData.title || '');
-    }
+    // תיעוד טיימאווט או שגיאה כללית - נשלח מ-run-day.js בכל המקרים
+    // אין צורך לכתוב כאן כדי למנוע כפילויות
     if (!global.__errorMailSent && isLastAttempt) {
       global.__errorMailSent = true;
       let reason = global.__errorReason || err.message || "שגיאה לא ידועה";
@@ -679,10 +672,8 @@ async function runOnce() {
 // הפעלה חד-פעמית בלבד, ללא ריטריי
 runWithTimeout(() => runOnce(), 12 * 60 * 1000)
   .catch(async err => {
-    // טיפול בשגיאת טיימאוט - שליחת מייל רק אם לא נשלח כבר
-    if (!isRetryMode) {
-      await logToSheet('Post failed', 'Error', groupUrl, `טיימאווט - עברו 12 דקות: ${err.message}`, postData.title || '');
-    }
+    // טיפול בשגיאת טיימאוט - נשלח מ-run-day.js בכל המקרים
+    // אין צורך לכתוב כאן כדי למנוע כפילויות
     if (!global.__errorMailSent && isLastAttempt) {
       global.__errorMailSent = true;
       let reason = global.__errorReason || err.message || "שגיאה לא ידועה";

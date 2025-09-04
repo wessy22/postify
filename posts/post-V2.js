@@ -33,10 +33,9 @@ const groupUrl = process.argv[2];
 const jsonFileName = process.argv[3];
 const isRetryMode = process.argv[4] === "--retry"; // האם זה ניסיון חוזר
 const groupPostIdentifier = process.argv[5] || ""; // מזהה קבוצה/פוסט
-const isLastAttempt = process.argv[6] === "--last"; // האם זה הניסיון האחרון
 
 if (!groupUrl || !jsonFileName) {
-  console.error("❌ Usage: node post.js <groupUrl> <jsonFileName> [--retry|--first] [groupPostIdentifier] [--last|--not-last]");
+  console.error("❌ Usage: node post.js <groupUrl> <jsonFileName> [--retry|--first] [groupPostIdentifier]");
   process.exit(1);
 }
 
@@ -52,15 +51,7 @@ const postText = postData.text;
 const logToSheet = async (...args) => {
   try {
     const fn = require('./log-to-sheets');
-    // אם יש שגיאה, הוסף אותה לעמודה G (error log) בעברית בלבד
-    if (args[1] === 'Error') {
-      // args: [event, status, group, reason, title]
-      const errorLog = (global.__errorReason || args[3] || "שגיאה לא ידועה").replace(/[^א-ת0-9 .,:;\-]/g, "");
-      // הוספת הערך לעמודה G
-      await fn(...args, errorLog);
-    } else {
-      await fn(...args);
-    }
+    await fn(...args);
   } catch (e) {
     console.error('⚠️ Failed to log to Google Sheet:', e.message);
   }
@@ -462,9 +453,9 @@ if (!composerFound) {
         if (!isRetryMode) {
           await logToSheet('Composer not found', 'Error', groupUrl, `לא נמצא כפתור "כאן כותבים" גם אחרי רענון, המתנה וגלילה. Screenshot: ${debugPath}`, postData.title || '');
         }
-  global.__errorReason = `לא נמצא composer בקבוצה: ${groupUrl} (Screenshot: ${debugPath})`;
-  await browser.close();
-  process.exit(1); // יציאה עם קוד שגיאה
+        await sendErrorMail("❌ Composer not found", `לא נמצא composer בקבוצה: ${groupUrl}\nScreenshot: ${debugPath}`);
+        await browser.close();
+        process.exit(1); // יציאה עם קוד שגיאה
       }
     }
 
@@ -631,17 +622,19 @@ if (!composerFound) {
     // תיעוד לגוגל שיטס רק אם זה לא ניסיון חוזר
     if (!isRetryMode) {
       const notesText = groupPostIdentifier || `שגיאה כללית: ${err.message}`;
-      // רישום שגיאה בעברית לעמודה G
-      global.__errorReason = global.__errorReason || err.message || "שגיאה לא ידועה";
       await logToSheet('Post failed', 'Error', groupName || groupUrl, notesText, postData.title || '');
     }
     if (browser) await browser.close();
 
-    // שליחת מייל רק בניסיון האחרון (למנוע כפילות)
-    if (isLastAttempt) {
-      let reason = global.__errorReason || err.message || "שגיאה לא ידועה";
-      await sendErrorMail("❌ שגיאה בפרסום פוסט", `הפרסום נכשל. סיבה: ${reason}`);
-    }
+    const message = [
+      `🛑 התרחשה שגיאה בסקריפט: ${__filename}`,
+      "",
+      `❗ שגיאה: ${err.message}`,
+      "",
+      err.stack,
+    ].join("\n");
+
+    await sendErrorMail("❌ שגיאה באוטומציה", message);
     process.exit(1);
   }
 }
@@ -655,38 +648,45 @@ async function closeChromeProcesses() {
   });
 }
 
-// ביטול ריטריי: הפעלה חד-פעמית בלבד
-global.__errorMailSent = false;
-async function runOnce() {
-  try {
-    await main();
-    process.exit(0);
-  } catch (err) {
-    // תיעוד טיימאווט או שגיאה כללית
-    if (!isRetryMode) {
-      await logToSheet('Post failed', 'Error', groupUrl, `שגיאה כללית או טיימאוט: ${err.message}`, postData.title || '');
+// פונקציית ריטריי
+async function runWithRetry(maxRetries = 3, logToSheetOnFailure = true) {
+  let attempt = 0;
+  let lastError = null;
+  
+  while (attempt < maxRetries) {
+    try {
+      await main();
+      return process.exit(0); // הצלחה
+    } catch (err) {
+      lastError = err;
+      if (err.message && err.message.includes("net::ERR_ABORTED")) {
+        attempt++;
+        console.error(`❌ net::ERR_ABORTED – ניסיון ${attempt}/${maxRetries}`);
+        await closeChromeProcesses();
+        if (attempt >= maxRetries) {
+          // כישלון סופי אחרי כל הניסיונות - תיעוד לגוגל שיטס רק אם מותר
+          if (logToSheetOnFailure) {
+            await logToSheet('Post failed', 'Error', groupUrl, `נכשל אחרי ${maxRetries} ניסיונות - net::ERR_ABORTED`, postData.title || '');
+          }
+          await sendErrorMail("❌ שגיאה net::ERR_ABORTED", `נכשל 3 פעמים בקבוצה: ${groupUrl}`);
+          return process.exit(1);
+        }
+        // ללא השהיה בין ניסיונות retry של אותה קבוצה
+      } else {
+        // שגיאה אחרת - main() כבר תיעד את השגיאה ושלח מייל (רק אם מותר)
+        return process.exit(1);
+      }
     }
-    if (!global.__errorMailSent && isLastAttempt) {
-      global.__errorMailSent = true;
-      let reason = global.__errorReason || err.message || "שגיאה לא ידועה";
-      await sendErrorMail("❌ שגיאה בפרסום פוסט", `הפרסום נכשל. סיבה: ${reason}`);
-    }
-    process.exit(1);
   }
 }
 
 // הפעל את הריטריי במקום ה־IIFE - בניסיון ראשון מותר לתעד, בניסיונות חוזרים לא
-// הפעלה חד-פעמית בלבד, ללא ריטריי
-runWithTimeout(() => runOnce(), 12 * 60 * 1000)
+runWithTimeout(() => runWithRetry(3, !isRetryMode), 12 * 60 * 1000)
   .catch(async err => {
-    // טיפול בשגיאת טיימאוט - שליחת מייל רק אם לא נשלח כבר
+    // תיעוד טיימאווט לגוגל שיטס רק אם זה לא ניסיון חוזר
     if (!isRetryMode) {
       await logToSheet('Post failed', 'Error', groupUrl, `טיימאווט - עברו 12 דקות: ${err.message}`, postData.title || '');
     }
-    if (!global.__errorMailSent && isLastAttempt) {
-      global.__errorMailSent = true;
-      let reason = global.__errorReason || err.message || "שגיאה לא ידועה";
-      await sendErrorMail("❌ שגיאה בפרסום פוסט", `הפרסום נכשל. סיבה: ${reason}`);
-    }
+    await sendErrorMail("פוסט נתקע", `Timeout - עברו 12 דקות בפוסט: ${groupUrl}\n${err.message}`);
     process.exit(1);
   });

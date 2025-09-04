@@ -1061,11 +1061,8 @@ function updateHeartbeat({ group, postFile, status, index }) {
 
               // העברת פרמטר retry כדי שpost.js לא יתעד בניסיונות ביניים
               const isRetry = retryCount > 0;
-              const isLastAttempt = retryCount >= 1; // האם זה הניסיון האחרון (2/2)
               const groupPostIdentifier = `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`;
-              const retryParam = isRetry ? "--retry" : "--first";
-              const lastAttemptParam = isLastAttempt ? "--last" : "--not-last";
-              const child = spawn("node", ["post.js", groupUrl, post.filename, retryParam, groupPostIdentifier, lastAttemptParam], { stdio: "inherit" });
+              const child = spawn("node", ["post.js", groupUrl, post.filename, isRetry ? "--retry" : "--first", groupPostIdentifier], { stdio: "inherit" });
 
               // --- Timeout ---
               const TIMEOUT = 5 * 60 * 1000;
@@ -1139,13 +1136,14 @@ function updateHeartbeat({ group, postFile, status, index }) {
                   }
                   
                   log(`❌ שגיאה בפרסום לקבוצה ${groupName}: ${errorReason}`);
-                  // מייל שגיאה נשלח מתוך post.js בניסיון הסופי - לא נשלח כאן
+                  const msg = `❌ הפרסום לקבוצה ${groupName} נכשל.\n\n📄 סיבה: ${errorReason}`;
+                  await sendErrorMail("❌ שגיאה בפרסום לקבוצה", `קובץ: ${post.filename}\nקבוצה: ${groupName}\n${errorReason}`);
                   // התיעוד לגוגל שיטס נעשה כעת בשכבת post.js רק בניסיון הסופי
                   if (retryCount < 2) { // שינוי: retryCount < 2 כי כבר העלינו אותו
                     log("🔁 מנסה שוב לפרסם לקבוצה...");
                   } else {
                     log("❌ מעבר לקבוצה הבאה אחרי כישלון");
-                    // רק תיעוד נוסף לגוגל שיטס (אם לא נעשה ב-post.js)
+                    // רק כעת נתעד לגוגל שיטס את הכישלון הסופי - זהה לpost.js
                     try {
                       await logToSheet("Post failed", "Error", cleanGroupName(groupName), errorReason);
                     } catch (e) {
@@ -1180,7 +1178,8 @@ function updateHeartbeat({ group, postFile, status, index }) {
               child.on("error", async (error) => {
                 clearTimeout(timeoutId);
                 log(`❌ שגיאה בהרצת post.js: ${error.message}`);
-                
+                await sendErrorMail("❌ שגיאה בהרצת post.js", `שגיאה בפרסום לקבוצה ${groupUrl}: ${error.message}`);
+
                 // עדכון heartbeat בשגיאה
                 updateHeartbeat({ group: groupUrl, postFile: post.filename, status: 'error', index: gi });
 
@@ -1188,7 +1187,6 @@ function updateHeartbeat({ group, postFile, status, index }) {
                   log("🔁 מנסה שוב לפרסם לקבוצה...");
                 } else {
                   log("⏭️ מדלג לקבוצה הבאה...");
-                  // מייל שגיאה יישלח מתוך post.js - לא כאן
                 }
                 resolve();
               });

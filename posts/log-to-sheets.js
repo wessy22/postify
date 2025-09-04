@@ -80,10 +80,10 @@ async function getOrCreateSheet(sheetName) {
 
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: `${sheetName}!A1:F1`,
+    range: `${sheetName}!A1:G1`,
     valueInputOption: 'RAW',
     resource: {
-      values: [['Timestamp', 'Action', 'Status', 'Group', 'Notes', 'Post Name']],
+      values: [['Timestamp', 'Action', 'Status', 'Group', 'Notes', 'Post Name', 'error log']],
     },
     auth,
   });
@@ -197,13 +197,18 @@ async function logToSheet(action, status, group = '', notes = '', postName = '',
     const cleanedGroup = cleanGroupName(group);
 
 
+    // תמיכה בעמודה G (error log) אם מתקבל פרמטר שישי
+    let row = [timestamp, action, status, cleanedGroup, notes, postName];
+    if (arguments.length >= 7 && arguments[6]) {
+      row.push(arguments[6]);
+    }
     await sheets.spreadsheets.values.append({
       spreadsheetId,
-      range: `${dateSheetName}!A:F`,
+      range: `${dateSheetName}!A:G`,
       valueInputOption: 'RAW',
       insertDataOption: 'INSERT_ROWS',
       resource: {
-        values: [[timestamp, action, status, cleanedGroup, notes, postName]],
+        values: [row],
       },
       auth,
     });

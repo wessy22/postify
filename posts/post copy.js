@@ -45,17 +45,9 @@ const instanceName = fs.readFileSync("C:\\postify\\posts\\instance-name.txt", "u
 const postsFolder = `C:\\postify\\user data\\${instanceName}\\posts`;
 const jsonPath = path.join(postsFolder, jsonFileName);
 
-// קריאת תוכן הפוסט עם הגנה מפני שגיאות
-let postData;
-let postText;
-try {
-  postData = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
-  postText = postData.text;
-  console.log("📄 Post data loaded successfully");
-} catch (error) {
-  console.error("❌ Failed to load post data:", error.message);
-  process.exit(1);
-}
+// קריאת תוכן הפוסט
+const postData = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
+const postText = postData.text;
 
 const logToSheet = async (...args) => {
   try {
@@ -227,7 +219,6 @@ const humanType = async (element, text) => {
 async function main() {
   let browser;
   let groupName = groupUrl;
-  let postSuccessful = false; // משתנה שעוקב אחרי הצלחת הפרסום
 
   try {
     const userDataDir = config.userDataDir.replace("user", os.userInfo().username);
@@ -257,11 +248,7 @@ async function main() {
       groupName = await page.title();
       console.log("📋 Group name detected:", groupName);
       // שמירת שם הקבוצה לקובץ מיד
-      try {
-        fs.writeFileSync(config.currentGroupFile, groupName, "utf-8");
-      } catch (saveError) {
-        console.log("⚠️ Warning: Could not save group name to file:", saveError.message);
-      }
+      fs.writeFileSync(config.currentGroupFile, groupName, "utf-8");
     } catch (e) {
       console.log("⚠️ Could not get group name yet, will try again later");
     }
@@ -617,22 +604,9 @@ if (!composerFound) {
       if (currentGroupName && currentGroupName !== groupUrl) {
         groupName = currentGroupName;
         console.log("📋 Updated group name:", groupName);
-        // ★ שמירת השם העדכני לקובץ מיד
-        try {
-          fs.writeFileSync(config.currentGroupFile, groupName, "utf-8");
-          console.log("📋 Updated group name saved to file");
-        } catch (saveError) {
-          console.log("⚠️ Warning: Could not save updated group name:", saveError.message);
-        }
       }
     } catch (e) {
       console.log("⚠️ Could not update group name:", e.message);
-    }
-    
-    // וידוא ש-groupName תקין
-    if (!groupName || groupName === 'undefined' || groupName === 'null') {
-      groupName = groupUrl;
-      console.log("🔧 Using fallback group name:", groupName);
     }
     
     console.log("GROUP_NAME_START" + groupName + "GROUP_NAME_END");
@@ -640,46 +614,15 @@ if (!composerFound) {
     // רישום הצלחה ל־logToSheet - נשלח מ-run-day.js בכל המקרים
     // אין צורך לכתוב כאן כדי למנוע כפילויות
     console.log("✅ Post published successfully");
-    postSuccessful = true; // ★ סימון שהפרסום הצליח
-    console.log("🔍 DEBUG: About to save group name...");
 
     // שמירת שם הקבוצה העדכני לקובץ
-    try {
-      fs.writeFileSync(config.currentGroupFile, groupName, "utf-8");
-      console.log("✅ Group name saved:", groupName);
-    } catch (saveError) {
-      console.log("⚠️ Warning: Could not save group name to file:", saveError.message);
-      // זה לא אמור לפסול את כל הפרסום
-    }
+    fs.writeFileSync(config.currentGroupFile, groupName, "utf-8");
+    console.log("✅ Group name saved:", groupName);
 
-    console.log("🔍 DEBUG: About to close browser...");
-    try {
-      await browser.close();
-      console.log("🎉 Browser closed successfully");
-    } catch (closeError) {
-      console.log("⚠️ Warning: Could not close browser properly:", closeError.message);
-      // זה לא אמור לפסול את כל הפרסום
-    }
-    
-    console.log("🎉 Process completed successfully");
-    console.log("🔍 DEBUG: About to return from main function...");
-    return; // הפונקציה הושלמה בהצלחה
+    await browser.close();
 
   } catch (err) {
     console.error("❌ Error:", err.message);
-    
-    // ★ אם הפרסום הצליח אבל יש שגיאה אחרי זה, זה לא כישלון פרסום!
-    if (postSuccessful) {
-      console.log("✅ Post was published successfully, ignoring cleanup errors");
-      if (browser) {
-        try { await browser.close(); } catch (e) { /* ignore */ }
-      }
-      return; // יציאה מוצלחת למרות שגיאות בניקיון
-    }
-    
-    // רק אם הפרסום באמת נכשל
-    console.error("❌ Post publishing failed:", err.message);
-    
     // תיעוד לגוגל שיטס רק אם זה לא ניסיון חוזר
     if (!isRetryMode) {
       const notesText = groupPostIdentifier || `שגיאה כללית: ${err.message}`;
@@ -711,20 +654,9 @@ async function closeChromeProcesses() {
 global.__errorMailSent = false;
 async function runOnce() {
   try {
-    console.log("🔍 DEBUG: Starting main function...");
     await main();
-    console.log("🔍 DEBUG: Main function completed successfully!");
     process.exit(0);
   } catch (err) {
-    console.log("🔍 DEBUG: Main function threw an error:", err.message);
-    
-    // בדיקה אם השגיאה קרתה אחרי פרסום מוצלח
-    if (err.message && err.message.includes("cleanup")) {
-      console.log("✅ Post was successful, error was in cleanup phase");
-      process.exit(0); // יציאה מוצלחת
-    }
-    
-    console.log("🔍 DEBUG: Error stack:", err.stack);
     // תיעוד טיימאווט או שגיאה כללית - נשלח מ-run-day.js בכל המקרים
     // אין צורך לכתוב כאן כדי למנוע כפילויות
     if (!global.__errorMailSent && isLastAttempt) {

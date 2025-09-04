@@ -193,8 +193,11 @@ async function logToSheet(action, status, group = '', notes = '', postName = '',
     await getOrCreateSheet(dateSheetName);
     await ensureConditionalFormattingOnce();
 
-    // ניקוי שם הקבוצה לפני הכנסה לשיט
-    const cleanedGroup = cleanGroupName(group);
+    // ניקוי שם הקבוצה לפני הכנסה לשיט (רק אם זה לא URL)
+    console.log(`🔍 DEBUG logToSheet - Original group: "${group}"`);
+    const cleanedGroup = (group && (group.includes('http://') || group.includes('https://'))) ? group : cleanGroupName(group);
+    console.log(`🔍 DEBUG logToSheet - Cleaned group: "${cleanedGroup}"`);
+    console.log(`🔍 DEBUG logToSheet - Is URL: ${group && (group.includes('http://') || group.includes('https://'))}`);
 
 
     // תמיכה בעמודה G (error log) אם מתקבל פרמטר שישי

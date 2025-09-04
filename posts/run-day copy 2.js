@@ -1013,7 +1013,7 @@ function updateHeartbeat({ group, postFile, status, index }) {
           const groupUrl = groupsToPublish[gi];
 
           log(`📢 posting to group(${gi + 1}/${groupsToPublish.length}): ${groupUrl}`);
-          await logToSheet("Publishing to group", "Started", groupUrl, `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`, post.title || post.filename);
+          await logToSheet("Publishing to group", "Started", cleanGroupName(groupUrl), `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`, post.title || post.filename);
 
           // לפני ניסיון פרסום
           updateHeartbeat({

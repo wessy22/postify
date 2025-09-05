@@ -1068,9 +1068,9 @@ function updateHeartbeat({ group, postFile, status, index }) {
               const child = spawn("node", ["post.js", groupUrl, post.filename, retryParam, groupPostIdentifier, lastAttemptParam], { stdio: "inherit" });
 
               // --- Timeout ---
-              const TIMEOUT = 5 * 60 * 1000;
+              const TIMEOUT = 15 * 60 * 1000;
               let timeoutId = setTimeout(async () => {
-                log(`⏰ Timeout! post.js לקח יותר מ־5 דקות. סוגר תהליך וממשיך...`);
+                log(`⏰ Timeout! post.js לקח יותר מ־15 דקות. סוגר תהליך וממשיך...`);
                 child.kill("SIGKILL");
                 
                 // תיעוד timeout לגוגל שיטס אם זה הניסיון הסופי
@@ -1085,7 +1085,7 @@ function updateHeartbeat({ group, postFile, status, index }) {
                 }
                 
                 // שליחת מייל רק עבור timeout
-                sendErrorMail("⏰ Timeout - קבוצה נתקעה", `הקבוצה ${groupUrl} נתקעה ליותר מ־5 דקות ונעצרה אוטומטית.`);
+                sendErrorMail("⏰ Timeout - קבוצה נתקעה", `הקבוצה ${groupUrl} נתקעה ליותר מ־15 דקות ונעצרה אוטומטית.`);
               }, TIMEOUT);
 
               // --- עדכון state ---

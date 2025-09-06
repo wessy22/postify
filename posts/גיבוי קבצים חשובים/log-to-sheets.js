@@ -180,8 +180,8 @@ function cleanGroupName(groupName) {
   return cleaned;
 }
 
-// הוספת postName כפרמטר חמישי ו-errorLog כפרמטר שישי
-async function logToSheet(action, status, group = '', notes = '', postName = '', errorLog = '', attempt = 1) {
+// הוספת postName כפרמטר חמישי
+async function logToSheet(action, status, group = '', notes = '', postName = '', attempt = 1) {
   try {
     await auth.authorize();
     await ensureSpreadsheetExists();
@@ -200,10 +200,10 @@ async function logToSheet(action, status, group = '', notes = '', postName = '',
     console.log(`🔍 DEBUG logToSheet - Is URL: ${group && (group.includes('http://') || group.includes('https://'))}`);
 
 
-    // תמיכה בעמודה G (error log) 
+    // תמיכה בעמודה G (error log) אם מתקבל פרמטר שישי
     let row = [timestamp, action, status, cleanedGroup, notes, postName];
-    if (errorLog && errorLog.trim()) {
-      row.push(errorLog);
+    if (arguments.length >= 7 && arguments[6]) {
+      row.push(arguments[6]);
     }
     await sheets.spreadsheets.values.append({
       spreadsheetId,
@@ -222,7 +222,7 @@ async function logToSheet(action, status, group = '', notes = '', postName = '',
       const delay = 2000 * attempt; // 2s, 4s, 6s
       console.warn(`⚠️ Google Sheets API unavailable (503). Retrying in ${delay / 1000}s... (Attempt ${attempt})`);
       await new Promise(res => setTimeout(res, delay));
-      return logToSheet(action, status, group, notes, postName, errorLog, attempt + 1);
+      return logToSheet(action, status, group, notes, attempt + 1);
     }
     console.error('❌ Failed to log to sheet:', err.message || err);
     // אפשר להוסיף כאן שליחת מייל אם תרצה

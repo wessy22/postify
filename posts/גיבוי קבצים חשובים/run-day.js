@@ -23,10 +23,6 @@ const ROTATION_STATE_FILE = path.join(__dirname, "rotation-states.json");
 // ניתן לעדכן את ההגדרות בזמן אמת ללא הפסקת המערכת
 let DAILY_SETTINGS = {};
 
-// ========== מעקב כשלונות רצופים ==========
-// מערכת עבור מעקב אחרי כשלונות ברצף לצורך שליחת התראות דחופות
-let consecutiveFailures = [];
-
 function getSettingsPath() {
     // קריאת שם השרת
     const instanceNameFile = './instance-name.txt';
@@ -124,10 +120,6 @@ console.log(`📊 הגדרות פרסום יומי (נטען מ-daily-settings.j
   ⏱️ השהייה בין פוסטים: ${DAILY_SETTINGS.DELAY_BETWEEN_POSTS_MINUTES} דקות
   🕯️ כיבוי לשבת: ${DAILY_SETTINGS.ENABLE_SABBATH_SHUTDOWN ? 'מופעל' : 'כבוי'}`);
 
-// איפוס מערכת כשלונות רצופים בתחילת כל הרצה
-consecutiveFailures = [];
-console.log("🔄 מערכת כשלונות רצופים אופסה לתחילת יום חדש");
-
 // הוספת פונקציה לעדכון הגדרות דינמי
 function updateMaxPosts(newMax) {
     return updateDailySettings({ MAX_POSTS_PER_DAY: newMax });
@@ -139,149 +131,6 @@ function updateMaxPublications(newMax) {
 
 function updateDelay(newDelay) {
     return updateDailySettings({ DELAY_BETWEEN_POSTS_MINUTES: newDelay });
-}
-
-// ========== מערכת מעקב כשלונות רצופים ==========
-
-// פונקציה לרישום כשלון קבוצה
-function recordGroupFailure(groupName, errorMessage) {
-    // בדיקה אם הקבוצה כבר נרשמה בכשלונות הרצופים
-    const isAlreadyFailed = consecutiveFailures.some(f => f.groupName === groupName);
-    
-    if (!isAlreadyFailed) {
-        const now = new Date();
-        const failure = {
-            groupName: groupName,
-            timestamp: now.toISOString(),
-            timeStr: now.toLocaleTimeString('he-IL', { timeZone: 'Asia/Jerusalem' }),
-            errorMessage: errorMessage
-        };
-        
-        consecutiveFailures.push(failure);
-        
-        // שמירה על מקסימום 10 כשלונות אחרונים
-        if (consecutiveFailures.length > 10) {
-            consecutiveFailures.shift();
-        }
-        
-        console.log(`❌ רישום כשלון קבוצה: ${groupName} (סה"כ כשלונות רצופים: ${consecutiveFailures.length})`);
-        
-        // בדיקה אם יש 3 כשלונות רצופים של קבוצות שונות
-        checkConsecutiveFailures();
-    } else {
-        console.log(`🔄 קבוצה ${groupName} כבר רשומה בכשלונות הרצופים - דילוג על רישום נוסף`);
-    }
-}
-
-// פונקציה לאיפוס כשלונות (נקרא בהצלחה)
-function resetConsecutiveFailures() {
-    if (consecutiveFailures.length > 0) {
-        console.log(`✅ איפוס כשלונות רצופים (היו ${consecutiveFailures.length} כשלונות)`);
-        consecutiveFailures = [];
-    }
-}
-
-// פונקציה לבדיקת כשלונות רצופים ושליחת התראה
-function checkConsecutiveFailures() {
-    console.log(`🔍 בדיקת כשלונות: ${consecutiveFailures.length} קבוצות שונות נכשלו ברצף`);
-    
-    if (consecutiveFailures.length >= 3) {
-        console.log(`� קבוצות שנכשלו: ${consecutiveFailures.map(f => f.groupName).join(', ')}`);
-        console.log("🚨 זוהו 3+ קבוצות שונות ברצף - שולח התראה!");
-        
-        // שלח את 3 הכשלונות הראשונים (כל אחד מקבוצה שונה)
-        const firstThreeFailures = consecutiveFailures.slice(0, 3);
-        sendUrgentFailureAlert(firstThreeFailures);
-    } else {
-        console.log("✅ לא מספיק קבוצות שונות לשליחת התראה");
-    }
-}
-
-// פונקציה לשליחת התראה דחופה
-async function sendUrgentFailureAlert(failures) {
-    try {
-        // הודעה דחופה לקונסול
-        console.log("🚨🚨🚨 התראה דחופה - זוהו 3 כשלונות קבוצות שונות ברצף! 🚨🚨🚨");
-        console.log("📧 שולח מייל התראה דחוף...");
-        
-        // קריאת hostname מקובץ instance-name.txt
-        let hostname = "לא ידוע";
-        try {
-            const instanceNameFile = './instance-name.txt';
-            if (fs.existsSync(instanceNameFile)) {
-                hostname = fs.readFileSync(instanceNameFile, 'utf8').trim();
-            }
-        } catch (e) {
-            console.log("⚠️ לא ניתן לקרוא hostname:", e.message);
-        }
-        
-        const now = new Date();
-        const alertTime = now.toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' });
-        
-        const failureList = failures.map((f, index) => 
-            `${index + 1}. ${f.groupName} (${f.timeStr}): ${f.errorMessage}`
-        ).join('\n');
-        
-        const subject = `🚨 התראה דחופה - 3 כשלונות קבוצות ברצף! [${hostname}]`;
-        
-        const textMessage = `
-🚨 התראה דחופה מ-Postify!
-
-🖥️ שרת: ${hostname}
-זוהו 3 כשלונות של קבוצות שונות ברצף:
-
-${failureList}
-
-⏰ זמן התראה: ${alertTime}
-
-יש לבדוק מיידית את מצב החיבור לפייסבוק והגדרות הפרסום.
-
-Postify - מערכת ניטור אוטומטית
-        `.trim();
-        
-        const htmlMessage = `
-<div dir="rtl" style="text-align:right;font-family:Arial,sans-serif;">
-  <div style="background-color:#ffebee;border:2px solid #f44336;border-radius:8px;padding:20px;">
-    <h2 style="color:#d32f2f;margin-top:0;">🚨 התראה דחופה מ-Postify!</h2>
-    
-    <div style="background-color:#e8f5e8;padding:10px;border-radius:5px;margin:10px 0;">
-      <b>🖥️ שרת:</b> <span style="background-color:#4CAF50;color:white;padding:2px 8px;border-radius:3px;">${hostname}</span>
-    </div>
-    
-    <div style="background-color:#ffffff;padding:15px;border-radius:5px;margin:15px 0;">
-      <h3 style="color:#d32f2f;">זוהו 3 כשלונות של קבוצות שונות ברצף:</h3>
-      <ol style="line-height:1.8;">
-        ${failures.map(f => 
-          `<li><b>${f.groupName}</b> (${f.timeStr}): ${f.errorMessage}</li>`
-        ).join('')}
-      </ol>
-    </div>
-    
-    <div style="background-color:#fff3e0;padding:10px;border-radius:5px;margin:10px 0;">
-      <b>⏰ זמן התראה:</b> ${alertTime}
-    </div>
-    
-    <div style="background-color:#ffcdd2;padding:15px;border-radius:5px;margin:15px 0;">
-      <b>🔧 פעולות מומלצות:</b><br>
-      • בדוק חיבור לאינטרנט<br>
-      • בדוק חיבור לפייסבוק<br>
-      • בדוק הגדרות קבוצות<br>
-      • בדוק לוגים למידע נוסף
-    </div>
-    
-    <div style="text-align:center;margin-top:20px;">
-      <b>Postify - מערכת ניטור אוטומטית</b>
-    </div>
-  </div>
-</div>
-        `.trim();
-        
-        await sendMail(subject, textMessage, htmlMessage);
-        console.log("🚨 התראה דחופה נשלחה - 3 כשלונות קבוצות ברצף!");
-        
-    } catch (error) {
-        console.log("❌ שגיאה בשליחת התראה דחופה:", error.message);
-    }
 }
 
 // ========== פונקציות כיבוי מחשב לשבת ==========
@@ -742,11 +591,6 @@ function cleanGroupName(groupName) {
     // הסרת רווחים בהתחלה ובסוף
     .trim();
     
-  // אם אחרי הניקוי לא נשאר כלום, החזר "אין שם קבוצה"
-  if (!cleaned || cleaned === '') {
-    return "אין שם קבוצה";
-  }
-    
   return cleaned;
 }
 
@@ -1017,8 +861,7 @@ function updateHeartbeat({ group, postFile, status, index }) {
     const fileArgIndex = args.indexOf("--file");
     const skipHeartbeat = args.includes("--no-heartbeat"); // אופציה חדשה
 
-    // מייל התחלת פרסום מהקוד הישן - בוטל
-    /*
+    // מייל התחלת פרסום מהקוד הישן
     try {
       const now = new Date();
       const dateStr = now.toLocaleDateString('he-IL', { timeZone: 'Asia/Jerusalem' });
@@ -1057,7 +900,6 @@ function updateHeartbeat({ group, postFile, status, index }) {
       log("❌ שגיאה בשליחת מייל תחילת פרסום: " + e.message);
       await sendErrorMail("❌ שגיאה בשליחת מייל תחילת פרסום", e.message);
     }
-    */
 
     // בדיקה אם היום שבת, חג או יום זיכרון
     if (DAILY_SETTINGS.ENABLE_SABBATH_SHUTDOWN) {
@@ -1147,11 +989,6 @@ function updateHeartbeat({ group, postFile, status, index }) {
 
       for (let pi = startPost; pi < postsToday.length; pi++) {
         const post = postsToday[pi];
-        
-        // הודעה על מערכת מעקב כשלונות רצופים
-        if (pi === startPost) {
-          log("🔍 מערכת מעקב כשלונות רצופים פעילה - התראה דחופה תישלח אחרי 3 כשלונות קבוצות שונות ברצף");
-        }
         
         // בדיקת עצירה לפי שעה בכל פוסט
         if (shouldStopByHour()) {
@@ -1285,10 +1122,6 @@ function updateHeartbeat({ group, postFile, status, index }) {
                 if (code === 0) {
                   success = true;
                   log(`✅ פורסם בהצלחה בקבוצה: ${groupName}`);
-                  
-                  // איפוס כשלונות רצופים בהצלחה
-                  resetConsecutiveFailures();
-                  
                   // רישום הצלחה לגוגל שיטס תמיד (בלי קשר לניסיון)
                   try {
                     const notesText = `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`;
@@ -1331,9 +1164,6 @@ function updateHeartbeat({ group, postFile, status, index }) {
                   }
                   
                   log(`❌ שגיאה בפרסום לקבוצה ${groupName}: ${errorReason}`);
-                  
-                  // רישום כשלון קבוצה למערכת המעקב
-                  recordGroupFailure(cleanGroupName(groupName), errorReason);
                   
                   if (retryCount < 2) { // שינוי: retryCount < 2 כי כבר העלינו אותו
                     log("🔁 מנסה שוב לפרסם לקבוצה...");
@@ -1523,8 +1353,7 @@ function updateHeartbeat({ group, postFile, status, index }) {
 
       // סיום יום: log-cost, מייל סגירה, כיבוי (רק אם לא פוסט ספציפי)
       if (!isSpecificPost) {
-        // שליחת מייל סיכום עם הנתונים החדשים - בוטל
-        /*
+        // שליחת מייל סיכום עם הנתונים החדשים
         try {
           const now = new Date();
           const endTimeStr = now.toLocaleTimeString('he-IL', { timeZone: 'Asia/Jerusalem' });
@@ -1598,7 +1427,6 @@ Postify
         } catch (mailError) {
           log("⚠️ שגיאה בשליחת מייל סיכום: " + mailError.message);
         }
-        */
         
         // ========== בדיקה נוספת לכיבוי שבת אחרי הפרסום ==========
         log("🕯️ בודק שוב אם צריך לכבות מחשב לקראת שבת...");

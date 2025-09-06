@@ -6,18 +6,6 @@ const path = require("path");
 const os = require("os");
 const config = require("./config.json");
 
-// פונקציית לוג לקובץ
-const LOG_FILE = path.join(__dirname, config.logFile || "log.txt");
-const logToFile = (text) => {
-  const timestamp = new Date().toLocaleString("sv-SE", { timeZone: "Asia/Jerusalem" }).replace(" ", "T");
-  const line = `[${timestamp}] ${text}`;
-  try {
-    fs.appendFileSync(LOG_FILE, line + "\n");
-  } catch (e) {
-    console.error("⚠️ שגיאה בכתיבה ללוג:", e.message);
-  }
-};
-
 async function runWithTimeout(fn, ms = 12 * 60 * 1000) {
   let timeout;
   return Promise.race([
@@ -39,7 +27,6 @@ try {
 console.log("🔍 RUNNING POST.JS VERSION WITH ENHANCED SUCCESS DETECTION - v2.0");
 console.log("🔍 File path:", __filename);
 console.log("🔍 Current time:", new Date().toISOString());
-logToFile("🔍 POST.JS STARTED - v2.0");
 
 // קריאת פרמטרים מהפקודה
 const groupUrl = process.argv[2];
@@ -47,8 +34,6 @@ const jsonFileName = process.argv[3];
 const isRetryMode = process.argv[4] === "--retry"; // האם זה ניסיון חוזר
 const groupPostIdentifier = process.argv[5] || ""; // מזהה קבוצה/פוסט
 const isLastAttempt = process.argv[6] === "--last"; // האם זה הניסיון האחרון
-
-logToFile(`📋 Parameters: ${groupUrl}, ${jsonFileName}, retry=${isRetryMode}, last=${isLastAttempt}`);
 
 if (!groupUrl || !jsonFileName) {
   console.error("❌ Usage: node post.js <groupUrl> <jsonFileName> [--retry|--first] [groupPostIdentifier] [--last|--not-last]");
@@ -63,26 +48,24 @@ const jsonPath = path.join(postsFolder, jsonFileName);
 // קריאת תוכן הפוסט עם הגנה מפני שגיאות
 let postData;
 let postText;
-  try {
-    postData = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
-    postText = postData.text;
-    console.log("📄 Post data loaded successfully");
-    logToFile(`📄 Post data loaded: ${jsonFileName}`);
-  } catch (error) {
-    console.error("❌ Failed to load post data:", error.message);
-    logToFile(`❌ Failed to load post data: ${error.message}`);
-    process.exit(1);
-  }const logToSheet = async (...args) => {
+try {
+  postData = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
+  postText = postData.text;
+  console.log("📄 Post data loaded successfully");
+} catch (error) {
+  console.error("❌ Failed to load post data:", error.message);
+  process.exit(1);
+}
+
+const logToSheet = async (...args) => {
   try {
     const fn = require('./log-to-sheets');
-    console.log(`🔍 DEBUG logToSheet args:`, args);
-    // אם יש שגיאה ויש פרמטר שישי, הוסף אותו לעמודה G
-    if (args[1] === 'Error' && args.length >= 6 && args[5]) {
+    // אם יש שגיאה, הוסף אותה לעמודה G (error log) בעברית בלבד
+    if (args[1] === 'Error') {
       // args: [event, status, group, notes, postName, errorReason]
-      const errorLog = (args[5] || "שגיאה לא ידועה").replace(/[^א-ת0-9 .,:;\-()]/g, "");
-      console.log(`🔍 DEBUG Error log to column G:`, errorLog);
-      // העברת כל הפרמטרים כולל הפרמטר השישי לעמודה G
-      await fn(args[0], args[1], args[2], args[3], args[4], errorLog);
+      const errorLog = (args[5] || global.__errorReason || args[3] || "שגיאה לא ידועה").replace(/[^א-ת0-9 .,:;\-()]/g, "");
+      // הוספת הערך לעמודה G
+      await fn(...args.slice(0, 5), errorLog);
     } else {
       await fn(...args);
     }
@@ -266,7 +249,6 @@ async function main() {
     await page.setViewport({ width: 1280, height: 800 });
 
     console.log("📍 Navigating to group page...");
-    logToFile(`📍 Navigating to: ${groupUrl}`);
     await page.goto(groupUrl, { waitUntil: "networkidle2", timeout: 0 });
     
     // קבלת שם הקבוצה מיד אחרי הטעינה
@@ -489,18 +471,11 @@ if (!composerFound) {
         const debugPath = `C:\\temp\\composer-not-found-${Date.now()}.png`;
         await page.screenshot({ path: debugPath });
         console.log("❌ Composer not found after all attempts. Screenshot saved:", debugPath);
-        logToFile(`❌ Composer not found after all attempts. Screenshot: ${debugPath}`);
-        
-        // תיעוד לגוגל שיטס רק בניסיון האחרון
-        if (isLastAttempt) {
-          await logToSheet('Post failed', 'Error', groupName || groupUrl, groupPostIdentifier, postData.title || '', `לא נמצא כפתור "כאן כותבים" גם אחרי כל הניסיונות. Screenshot: ${debugPath}`);
-          console.log("📊 שגיאת Composer נרשמה לגוגל שיטס");
-          logToFile("📊 Composer error logged to Google Sheets");
-        }
-        
-        global.__errorReason = `לא נמצא composer בקבוצה: ${groupUrl} (Screenshot: ${debugPath})`;
-        await browser.close();
-        process.exit(1); // יציאה עם קוד שגיאה
+        // תיעוד לגוגל שיטס - נשלח מ-run-day.js בכל המקרים
+        // אין צורך לכתוב כאן כדי למנוע כפילויות
+  global.__errorReason = `לא נמצא composer בקבוצה: ${groupUrl} (Screenshot: ${debugPath})`;
+  await browser.close();
+  process.exit(1); // יציאה עם קוד שגיאה
       }
     }
 
@@ -621,12 +596,9 @@ if (!composerFound) {
 
     if (!publishClicked) {
       console.log("❌ Publish button not found");
-      logToFile("❌ Publish button not found");
-      // תיעוד לגוגל שיטס רק בניסיון האחרון
-      if (isLastAttempt) {
-        await logToSheet('Post failed', 'Error', groupName || groupUrl, groupPostIdentifier, postData.title || '', 'לא נמצא כפתור פרסום');
-        console.log("📊 שגיאת Publish button נרשמה לגוגל שיטס");
-        logToFile("📊 Publish button error logged to Google Sheets");
+      // תיעוד לגוגל שיטס רק אם זה לא ניסיון חוזר
+      if (!isRetryMode) {
+        await logToSheet('Publish button not found', 'Error', groupUrl, 'לא נמצא כפתור פרסום', postData.title || '');
       }
       await browser.close();
       process.exit(1);
@@ -668,7 +640,6 @@ if (!composerFound) {
     // רישום הצלחה ל־logToSheet - נשלח מ-run-day.js בכל המקרים
     // אין צורך לכתוב כאן כדי למנוע כפילויות
     console.log("✅ Post published successfully");
-    logToFile("✅ Post published successfully");
     postSuccessful = true; // ★ סימון שהפרסום הצליח
     console.log("🔍 DEBUG: About to save group name...");
 
@@ -708,16 +679,13 @@ if (!composerFound) {
     
     // רק אם הפרסום באמת נכשל
     console.error("❌ Post publishing failed:", err.message);
-    logToFile(`❌ Post publishing failed: ${err.message}`);
     
-    // תיעוד לגוגל שיטס רק בניסיון האחרון
-    if (isLastAttempt) {
+    // תיעוד לגוגל שיטס רק אם זה לא ניסיון חוזר
+    if (!isRetryMode) {
       const notesText = groupPostIdentifier || `שגיאה כללית: ${err.message}`;
       // רישום שגיאה בעברית לעמודה G
-      const errorReason = global.__errorReason || err.message || "שגיאה לא ידועה";
-      await logToSheet('Post failed', 'Error', groupName || groupUrl, notesText, postData.title || '', errorReason);
-      console.log("📊 שגיאה כללית נרשמה לגוגל שיטס");
-      logToFile("📊 General error logged to Google Sheets");
+      global.__errorReason = global.__errorReason || err.message || "שגיאה לא ידועה";
+      await logToSheet('Post failed', 'Error', groupName || groupUrl, notesText, postData.title || '');
     }
     if (browser) await browser.close();
 

@@ -1654,11 +1654,34 @@ Postify
       const nonScheduledPosts = allPosts.filter(p => p.status !== 'scheduled');
       const pausedDueToDuplicates = [];
       
+      // בדוק אם יש פוסטים שכבר ב-paused בגלל כפילויות קודמות
+      const alreadyPausedDueToDuplicates = allPosts.filter(p => 
+        p.status === 'paused' && 
+        p.schedule_type && 
+        (p.schedule_type === 'weekly' || p.schedule_type === 'monthly' || p.schedule_type === 'one-time')
+      );
+      
+      if (alreadyPausedDueToDuplicates.length > 0) {
+        console.log(`ℹ️ נמצאו ${alreadyPausedDueToDuplicates.length} פוסטים שכבר ב-paused (ככל הנראה בגלל כפילויות קודמות)`);
+        alreadyPausedDueToDuplicates.forEach(p => {
+          console.log(`   - ${p.filename}: ${p.title || 'ללא שם'} (${p.schedule_type})`);
+        });
+      }
+      
+      // בדוק אם צריך למנוע כפילויות לפי מגבלת הפוסטים היומית
+      const maxPostsPerDay = DAILY_SETTINGS.MAX_POSTS_PER_DAY || 1;
+      const shouldPreventDuplicates = maxPostsPerDay === 1;
+      
+      console.log(`📊 מגבלת פוסטים יומית: ${maxPostsPerDay}`);
+      console.log(`🚫 מניעת כפילויות: ${shouldPreventDuplicates ? 'מופעלת' : 'מושבתת'} (${shouldPreventDuplicates ? 'פוסט אחד ביום' : 'מספר פוסטים מותר'})`);
+      
       // הוסף קודם פוסטים לא מתוזמנים (לא נבדקים לכפילויות)
       validPosts.push(...nonScheduledPosts);
       
-      // בדוק פוסטים מתוזמנים לכפילויות
-      for (const post of scheduledPosts) {
+      // בדוק פוסטים מתוזמנים לכפילויות - רק אם מוגדר פוסט אחד ביום
+      if (shouldPreventDuplicates) {
+        console.log('🔍 מבצע בדיקת כפילויות (מוגבל לפוסט אחד ביום)');
+        for (const post of scheduledPosts) {
         let hasConflict = false;
         let conflictDetails = [];
         
@@ -1724,10 +1747,16 @@ Postify
         }
         
         validPosts.push(post);
+        }
+      } else {
+        console.log('✅ מדלג על בדיקת כפילויות (מותרים מספר פוסטים ביום)');
+        // אם לא צריך למנוע כפילויות, פשוט הוסף את כל הפוסטים המתוזמנים
+        validPosts.push(...scheduledPosts);
       }
       
-      // שליחת מייל על כפילויות שזוהו (אם יש)
-      if (pausedDueToDuplicates.length > 0) {
+      // שליחת מייל על כפילויות שזוהו (אם יש) - רק אם הופעלה בדיקת כפילויות ונמצאו כפילויות
+      if (shouldPreventDuplicates && pausedDueToDuplicates.length > 0) {
+        console.log(`📧 נשלח מייל על ${pausedDueToDuplicates.length} פוסטים שעברו ל-paused עכשיו`);
         const emailContent = [
           `🚨 זוהו כפילויות תאריכים ב-${pausedDueToDuplicates.length} פוסטים`,
           "",
@@ -1749,10 +1778,14 @@ Postify
         // שליחת מייל (אסינכרוני - לא נעצור בגלל שגיאת מייל)
         sendErrorMail("🚨 זוהו כפילויות תאריכים בפוסטים", emailContent)
           .catch(e => console.log("❌ שגיאה בשליחת מייל כפילויות:", e.message));
+      } else if (shouldPreventDuplicates) {
+        console.log(`✅ לא נמצאו כפילויות חדשות לדיווח`);
+      } else {
+        console.log(`ℹ️ בדיקת כפילויות לא הופעלה (מותרים ${maxPostsPerDay} פוסטים ביום)`);
       }
       
       console.log(`✅ וולידציה הושלמה: ${validPosts.length} פוסטים סך הכל`);
-      if (pausedDueToDuplicates.length > 0) {
+      if (shouldPreventDuplicates && pausedDueToDuplicates.length > 0) {
         console.log(`⚠️ ${pausedDueToDuplicates.length} פוסטים הועברו ל-paused בגלל כפילויות`);
       }
       

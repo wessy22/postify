@@ -1,0 +1,52 @@
+{
+  "chromePath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  "userDataDir": "C:\\postify\\chrome-profiles\\postify",
+  "serverUrl": "https://postify.co.il",
+  "apiEndpoint": "/wp-content/postify-api",
+  "timeouts": {
+    "pageLoad": 30000,
+    "elementWait": 5000,
+    "groupDelay": 2000
+  },
+  "selectors": {
+    "posts": [
+      "[data-pagelet*=\"FeedUnit\"]",
+      "[role=\"article\"]",
+      ".userContentWrapper",
+      "[data-testid=\"story-subtitle\"]",
+      ".story_body_container",
+      ".fbUserContent",
+      ".fbPhotoSnowbox"
+    ],
+    "content": [
+      "[data-testid=\"post_message\"]",
+      ".userContent",
+      ".text_exposed_root",
+      ".story_body_container",
+      ".fbUserContent",
+      ".text_exposed_show"
+    ],
+    "time": [
+      "a[role=\"link\"] time",
+      ".timestampContent",
+      "[data-testid=\"story-subtitle\"] a",
+      ".timestamp",
+      "[data-utime]",
+      "abbr[data-utime]",
+      "span[data-utime]"
+    ]
+  },
+  "logging": {
+    "level": "INFO",
+    "colors": true,
+    "saveToFile": true,
+    "maxLogSize": 10485760
+  },
+  "advanced": {
+    "scrollAttempts": 3,
+    "retryFailedGroups": true,
+    "maxRetries": 2,
+    "headless": false,
+    "enableConsoleLog": true
+  }
+}

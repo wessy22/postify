@@ -1,0 +1,72 @@
+{
+  "scanDate": "2025-09-09T09:14:24.122Z",
+  "totalGroups": 4,
+  "successfulScans": 4,
+  "failedScans": 0,
+  "results": [
+    {
+      "groupName": "קבוצה 251476145048376",
+      "groupUrl": "https://www.facebook.com/groups/251476145048376",
+      "statusUrl": "https://www.facebook.com/groups/251476145048376/my_posted_content",
+      "posts": [],
+      "totalPosts": 0,
+      "statusCounts": {
+        "published": 0,
+        "pending": 0,
+        "rejected": 0,
+        "removed": 0,
+        "unknown": 0
+      },
+      "scanTime": "2025-09-09T09:14:10.570Z",
+      "success": true
+    },
+    {
+      "groupName": "קבוצה 240377650391486",
+      "groupUrl": "https://www.facebook.com/groups/240377650391486",
+      "statusUrl": "https://www.facebook.com/groups/240377650391486/my_posted_content",
+      "posts": [],
+      "totalPosts": 0,
+      "statusCounts": {
+        "published": 0,
+        "pending": 0,
+        "rejected": 0,
+        "removed": 0,
+        "unknown": 0
+      },
+      "scanTime": "2025-09-09T09:14:15.473Z",
+      "success": true
+    },
+    {
+      "groupName": "קבוצה dirotlehascarabeherzelia",
+      "groupUrl": "https://www.facebook.com/groups/dirotlehascarabeherzelia",
+      "statusUrl": "https://www.facebook.com/groups/dirotlehascarabeherzelia/my_posted_content",
+      "posts": [],
+      "totalPosts": 0,
+      "statusCounts": {
+        "published": 0,
+        "pending": 0,
+        "rejected": 0,
+        "removed": 0,
+        "unknown": 0
+      },
+      "scanTime": "2025-09-09T09:14:19.861Z",
+      "success": true
+    },
+    {
+      "groupName": "קבוצה 1018053589723035",
+      "groupUrl": "https://www.facebook.com/groups/1018053589723035",
+      "statusUrl": "https://www.facebook.com/groups/1018053589723035/my_posted_content",
+      "posts": [],
+      "totalPosts": 0,
+      "statusCounts": {
+        "published": 0,
+        "pending": 0,
+        "rejected": 0,
+        "removed": 0,
+        "unknown": 0
+      },
+      "scanTime": "2025-09-09T09:14:24.120Z",
+      "success": true
+    }
+  ]
+}

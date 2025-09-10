@@ -1292,8 +1292,25 @@ function updateHeartbeat({ group, postFile, status, index }) {
                   // רישום הצלחה לגוגל שיטס תמיד (בלי קשר לניסיון)
                   try {
                     const notesText = `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`;
-                    await logToSheet('Publishing finished', 'Success', cleanGroupName(groupName), notesText, post.title || post.filename);
-                    log("📊 הצלחה נרשמה לגוגל שיטס");
+                    
+                    // בדיקה אם יש נתוני סטטוס מקובץ זמני
+                    let statusData = null;
+                    const tempStatusPath = path.join(__dirname, 'temp-status-data.json');
+                    try {
+                      if (fs.existsSync(tempStatusPath)) {
+                        const statusText = fs.readFileSync(tempStatusPath, 'utf8');
+                        statusData = JSON.parse(statusText);
+                        // מחיקת הקובץ הזמני אחרי השימוש
+                        fs.unlinkSync(tempStatusPath);
+                        console.log("📊 מוסיף נתוני סטטוס לגיליון:", statusData);
+                      }
+                    } catch (statusError) {
+                      console.log("⚠️ שגיאה בקריאת נתוני סטטוס:", statusError.message);
+                    }
+                    
+                    await logToSheet('Publishing finished', 'Success', cleanGroupName(groupName), notesText, post.title || post.filename, '', statusData);
+                    
+                    log("📊 הצלחה נרשמה לגוגל שיטס" + (statusData ? " (עם נתוני סטטוס)" : ""));
                   } catch (e) {
                     log("⚠️ שגיאה ברישום הצלחה לגוגל שיט: " + e.message);
                   }

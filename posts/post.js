@@ -91,6 +91,365 @@ let postText;
   }
 };
 
+// פונקציה משופרת לחילוץ תאריך מטקסט פוסט
+function extractPostDate(postText) {
+  try {
+    console.log(`🕒 מנתח תאריך מהטקסט: "${postText}"`);
+    
+    // דפוסים שונים של תאריכים בפייסבוק - מסודרים לפי עדיפות
+    const patterns = [
+      // זמן יחסי קצר - עדיפות גבוהה (פוסט חדש)
+      /לפני (\d+) דקות?/,
+      /לפני דקה/,
+      /לפני (\d+) שעות?/,
+      /לפני שעה/,
+      
+      // זמן יחסי בלי "לפני"
+      /(\d+) דקות?/,
+      /(\d+) שעות?/,
+      
+      // זמן יחסי ארוך יותר
+      /לפני (\d+) ימים?/,
+      /לפני יום/,
+      /לפני (\d+) שבועות?/,
+      /לפני שבוע/,
+      
+      // תאריכים יחסיים
+      /(היום|אתמול|שלשום)/,
+      
+      // תאריך מלא
+      /(\d{1,2})[\/\.](\d{1,2})[\/\.](\d{4})/,
+      
+      // שמות חודשים עבריים
+      /(ינואר|פברואר|מרץ|אפריל|מאי|יוני|יולי|אוגוסט|ספטמבר|אוקטובר|נובמבר|דצמבר)/
+    ];
+    
+    let detectedDate = null;
+    let confidence = 0;
+    let matchedPattern = '';
+    
+    for (const pattern of patterns) {
+      const match = postText.match(pattern);
+      if (match) {
+        matchedPattern = match[0];
+        console.log(`✅ זוהה דפוס תאריך: "${matchedPattern}"`);
+        
+        // "לפני דקה" - ביטחון מקסימלי
+        if (match[0] === 'לפני דקה') {
+          detectedDate = new Date(Date.now() - 60000); // לפני דקה
+          confidence = 99;
+          console.log(`🎯 זוהה "לפני דקה" - ביטחון מקסימלי!`);
+          break;
+        }
+        // "לפני X דקות" - ביטחון גבוה מאוד
+        else if (match[0].includes('לפני') && match[0].includes('דקות')) {
+          const num = parseInt(match[1]);
+          detectedDate = new Date(Date.now() - num * 60000);
+          confidence = 98 - (num * 0.1); // ככל שיותר דקות, פחות ביטחון
+          console.log(`🎯 זוהה "לפני ${num} דקות" - פוסט חדש מאוד!`);
+          break;
+        }
+        // "לפני שעה" או "לפני X שעות"
+        else if (match[0].includes('לפני') && match[0].includes('שעות')) {
+          const num = parseInt(match[1]) || 1;
+          detectedDate = new Date(Date.now() - num * 3600000);
+          confidence = 90 - (num * 2); // ככל שיותר שעות, פחות ביטחון
+          console.log(`🕒 זוהה "לפני ${num} שעות"`);
+          break;
+        }
+        // זמן יחסי בלי "לפני" - X דקות או X שעות
+        else if (/^\d+\s+(דקות?|שעות?)$/.test(match[0])) {
+          const num = parseInt(match[1]);
+          const unit = match[2];
+          
+          if (unit.includes('דקות')) {
+            detectedDate = new Date(Date.now() - num * 60000);
+            confidence = 95 - (num * 0.2);
+          } else if (unit.includes('שעות')) {
+            detectedDate = new Date(Date.now() - num * 3600000);
+            confidence = 85 - (num * 2);
+          }
+          console.log(`🕒 זוהה זמן יחסי: ${num} ${unit}`);
+          break;
+        }
+        // "לפני יום" או "לפני X ימים"
+        else if (match[0].includes('לפני') && match[0].includes('ימים')) {
+          const num = parseInt(match[1]) || 1;
+          detectedDate = new Date(Date.now() - num * 86400000);
+          confidence = 80 - (num * 5);
+          break;
+        }
+        // "היום" - ביטחון גבוה
+        else if (match[0] === 'היום') {
+          detectedDate = new Date();
+          confidence = 95;
+          break;
+        } else if (match[0] === 'אתמול') {
+          detectedDate = new Date(Date.now() - 86400000);
+          confidence = 95;
+          break;
+        } else if (match[0] === 'שלשום') {
+          detectedDate = new Date(Date.now() - 172800000);
+          confidence = 95;
+          break;
+        }
+      }
+    }
+    
+    if (detectedDate) {
+      console.log(`✅ תאריך זוהה בהצלחה: ${detectedDate.toISOString()} (ביטחון: ${confidence}%, דפוס: "${matchedPattern}")`);
+    } else {
+      console.log(`❌ לא הצלחתי לזהות תאריך מהטקסט: "${postText}"`);
+    }
+    
+    return {
+      date: detectedDate,
+      confidence: confidence,
+      matchedPattern: matchedPattern,
+      originalText: postText.substring(0, 200)
+    };
+  } catch (error) {
+    console.log(`❌ שגיאה בחילוץ תאריך: ${error.message}`);
+    return { date: null, confidence: 0, originalText: postText.substring(0, 200) };
+  }
+}
+
+// פונקציה לבדיקת סטטוס פוסטים בקבוצה מיד אחרי פרסום
+async function checkPostStatusAfterPublish(page, groupUrl, groupName) {
+  console.log(`🔍 בודק סטטוס פוסטים בקבוצה: ${groupName}`);
+  
+  try {
+    // בניית URL עם my_posted_content
+    const statusUrl = groupUrl.endsWith('/') 
+      ? groupUrl + 'my_posted_content' 
+      : groupUrl + '/my_posted_content';
+    
+    console.log(`🌐 נכנס לכתובת סטטוס: ${statusUrl}`);
+    
+    // מעבר לעמוד הסטטוס
+    await page.goto(statusUrl, {
+      waitUntil: "networkidle0", 
+      timeout: 30000
+    });
+    
+    // המתנה לטעינה מלאה
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    
+    // גלילה קלה להפעלת התוכן
+    await page.evaluate(() => {
+      window.scrollBy(0, 100);
+      setTimeout(() => window.scrollBy(0, -100), 1000);
+    });
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    
+    // חיפוש טאבים של סטטוסים
+    const statusData = await page.evaluate(() => {
+      const tabs = [
+        ...document.querySelectorAll('[role="tab"]'),
+        ...document.querySelectorAll('button'),
+        ...document.querySelectorAll('a'),
+        ...document.querySelectorAll('div[tabindex]')
+      ];
+      
+      const result = {
+        published: 0,
+        pending: 0,
+        rejected: 0,
+        removed: 0,
+        latestStatus: null,
+        latestDate: null
+      };
+      
+      const statusKeywords = ['בהמתנה', 'פורסמו', 'נדחו', 'הוסרו', 'pending', 'published', 'rejected', 'removed'];
+      
+      tabs.forEach((tab) => {
+        const tabText = tab.textContent || tab.innerText || '';
+        
+        if (statusKeywords.some(keyword => tabText.includes(keyword)) && tabText.length < 100) {
+          const numberMatch = tabText.match(/(\d+)/);
+          if (numberMatch) {
+            const count = parseInt(numberMatch[1]);
+            
+            if (tabText.includes('פורסמו') || tabText.includes('published')) {
+              result.published = count;
+            } else if (tabText.includes('בהמתנה') || tabText.includes('pending')) {
+              result.pending = count;
+            } else if (tabText.includes('נדחו') || tabText.includes('rejected')) {
+              result.rejected = count;
+            } else if (tabText.includes('הוסרו') || tabText.includes('removed')) {
+              result.removed = count;
+            }
+          }
+        }
+      });
+      
+      return result;
+    });
+    
+    // נסה לזהות את הפוסט האחרון על ידי כניסה לטאבים ובדיקת תאריכים אמיתיים
+    const tabsToCheck = [
+      { keywords: ['בהמתנה', 'pending'], status: 'pending' },
+      { keywords: ['פורסמו', 'published'], status: 'published' },
+      { keywords: ['נדחו', 'rejected'], status: 'rejected' },
+      { keywords: ['הוסרו', 'removed'], status: 'removed' }
+    ];
+    
+    let latestPost = null;
+    let latestPostDate = null;
+    
+    console.log(`🔍 מתחיל בדיקה מתקדמת של הפוסט האחרון בין כל הטאבים...`);
+    
+    for (const tabConfig of tabsToCheck) {
+      try {
+        // חיפוש הטאב
+        const tabFound = await page.evaluate((keywords) => {
+          const allTabs = [
+            ...document.querySelectorAll('[role="tab"]'),
+            ...document.querySelectorAll('button'),
+            ...document.querySelectorAll('a'),
+            ...document.querySelectorAll('div[tabindex]')
+          ];
+          
+          for (const tab of allTabs) {
+            const tabText = tab.textContent || tab.innerText || '';
+            if (keywords.some(keyword => tabText.includes(keyword)) && tabText.length < 100) {
+              try {
+                tab.click();
+                return { success: true, clickedText: tabText };
+              } catch (e) {
+                continue;
+              }
+            }
+          }
+          return { success: false };
+        }, tabConfig.keywords);
+        
+        if (tabFound.success) {
+          console.log(`✅ לחצתי על טאב: ${tabFound.clickedText}`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          // חיפוש הפוסט הראשון בטאב עם תאריך
+          const firstPostInfo = await page.evaluate(() => {
+            const postSelectors = [
+              '[data-testid="story-subtitle"]',
+              '[data-testid*="post"]',
+              '[role="article"]',
+              'div[data-ft]',
+              '.userContentWrapper',
+              'div[style*="border"]'
+            ];
+            
+            for (const selector of postSelectors) {
+              const posts = document.querySelectorAll(selector);
+              if (posts.length > 0) {
+                const firstPost = posts[0];
+                const postText = firstPost.textContent || firstPost.innerText || '';
+                
+                // חיפוש תאריך מתקדם
+                let postDate = '';
+                const dateSelectors = [
+                  '[data-testid="story-subtitle"]',
+                  '.timestampContent',
+                  'abbr[data-utime]',
+                  'time',
+                  'span[title]'
+                ];
+                
+                for (const dateSelector of dateSelectors) {
+                  const dateElement = firstPost.querySelector(dateSelector) || document.querySelector(dateSelector);
+                  if (dateElement) {
+                    postDate = dateElement.textContent || dateElement.getAttribute('title') || '';
+                    if (postDate) break;
+                  }
+                }
+                
+                // אם לא נמצא תאריך ספציפי, חפש בכל הדף
+                if (!postDate) {
+                  const timeElements = [...document.querySelectorAll('*')].filter(el => {
+                    const text = el.textContent || el.innerText || '';
+                    return text.match(/(לפני|היום|אתמול|\d+\s+(דקות?|שעות?|ימים?)|\d{1,2}\/\d{1,2}\/\d{4})/) && text.length < 50;
+                  });
+                  
+                  if (timeElements.length > 0) {
+                    postDate = timeElements[0].textContent || timeElements[0].innerText || '';
+                  }
+                }
+                
+                return {
+                  found: true,
+                  text: postText.substring(0, 200),
+                  date: postDate
+                };
+              }
+            }
+            return { found: false };
+          });
+          
+          if (firstPostInfo.found && firstPostInfo.date) {
+            const dateInfo = extractPostDate(firstPostInfo.date);
+            console.log(`📅 בטאב ${tabConfig.status}: תאריך גולמי="${firstPostInfo.date}", תאריך מעובד=${dateInfo.date ? dateInfo.date.toISOString() : 'null'}, ביטחון=${dateInfo.confidence}%`);
+            
+            if (dateInfo.date && dateInfo.confidence > 70) {
+              // בדיקה אם זה הפוסט החדש ביותר
+              if (!latestPost || dateInfo.date > latestPostDate) {
+                latestPost = tabConfig.status;
+                latestPostDate = dateInfo.date;
+                console.log(`🏆 פוסט חדש ביותר עודכן ל-${tabConfig.status} (${dateInfo.date.toISOString()}, ביטחון: ${dateInfo.confidence}%)`);
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.log(`⚠️ שגיאה בבדיקת טאב ${tabConfig.status}: ${error.message}`);
+      }
+    }
+    
+    // סיכום התוצאות
+    let finalLatestPost = latestPost || 'unknown';
+    
+    // Fallback - אם לא הצלחנו לזהות על פי תאריך, נשתמש בלוגיקה פשוטה
+    if (!latestPost) {
+      console.log(`❓ לא זוהה פוסט אחרון לפי תאריך, משתמש בלוגיקה fallback...`);
+      
+      if (statusData.pending > 0) {
+        finalLatestPost = 'pending';
+        console.log(`🎯 Fallback: יש ${statusData.pending} פוסטים ממתינים - הפוסט האחרון כנראה בהמתנה`);
+      } else if (statusData.published > 0) {
+        finalLatestPost = 'published';
+        console.log(`🎯 Fallback: יש ${statusData.published} פוסטים מפורסמים ואין ממתינים - הפוסט האחרון כנראה פורסם`);
+      }
+    }
+    
+    console.log(`📊 תוצאות סריקת סטטוס עבור ${groupName}:`);
+    console.log(`   ✅ מפורסמים: ${statusData.published}`);
+    console.log(`   ⏳ ממתינים: ${statusData.pending}`);
+    console.log(`   ❌ נדחו: ${statusData.rejected}`);
+    console.log(`   🗑️ הוסרו: ${statusData.removed}`);
+    console.log(`   🎯 פוסט אחרון (לפי תאריך): ${finalLatestPost}`);
+    
+    return {
+      published: statusData.published,
+      pending: statusData.pending,
+      rejected: statusData.rejected,
+      removed: statusData.removed,
+      latestPostStatus: finalLatestPost,
+      success: true
+    };
+    
+  } catch (error) {
+    console.log(`❌ שגיאה בבדיקת סטטוס: ${error.message}`);
+    return {
+      published: 0,
+      pending: 0,
+      rejected: 0,
+      removed: 0,
+      latestPostStatus: 'error',
+      success: false,
+      error: error.message
+    };
+  }
+}
+
 // פונקציה לאופטימיזציה של קישורים עבור פייסבוק
 const optimizeLinksForFacebook = (text) => {
   console.log("🔗 Optimizing links for Facebook recognition...");
@@ -670,6 +1029,31 @@ if (!composerFound) {
     console.log("✅ Post published successfully");
     logToFile("✅ Post published successfully");
     postSuccessful = true; // ★ סימון שהפרסום הצליח
+    
+    // ★ בדיקת סטטוס פוסטים מיד אחרי פרסום מוצלח
+    console.log("🔍 מתחיל בדיקת סטטוס פוסטים...");
+    const statusResult = await checkPostStatusAfterPublish(page, groupUrl, groupName);
+    
+    // שמירת נתוני הסטטוס לקובץ זמני שיוכל לקרוא run-day.js
+    const statusData = statusResult.success ? {
+      latestPostStatus: statusResult.latestPostStatus || 'unknown',
+      published: statusResult.published || 0,
+      pending: statusResult.pending || 0,
+      rejected: statusResult.rejected || 0,
+      removed: statusResult.removed || 0
+    } : null;
+    
+    if (statusData) {
+      try {
+        fs.writeFileSync(path.join(__dirname, 'temp-status-data.json'), JSON.stringify(statusData), 'utf8');
+        console.log("✅ נתוני סטטוס נשמרו לקובץ זמני:", statusData);
+      } catch (saveError) {
+        console.log("⚠️ שגיאה בשמירת נתוני סטטוס:", saveError.message);
+      }
+    } else {
+      console.log("⚠️ לא הצלחתי לבדוק סטטוס פוסטים");
+    }
+    
     console.log("🔍 DEBUG: About to save group name...");
 
     // שמירת שם הקבוצה העדכני לקובץ

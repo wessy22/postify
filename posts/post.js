@@ -114,10 +114,11 @@ function extractPostDate(postText) {
       /לפני (\d+) שבועות?/,
       /לפני שבוע/,
       
-      // תאריכים יחסיים
-      /(היום|אתמול|שלשום)/,
-      
-      // תאריך מלא
+        // תאריכים יחסיים
+        /(היום|אתמול|שלשום)/,
+        
+        // תאריכים עבריים כמו "10 בספט'", "5 בינו'", "20 בדצמ'"
+        /(\d+)\s+ב(ינו|פבר|מרץ|אפר|מאי|יונ|יול|אוג|ספט|אוק|נוב|דצמ)\'?/,      // תאריך מלא
       /(\d{1,2})[\/\.](\d{1,2})[\/\.](\d{4})/,
       
       // שמות חודשים עבריים
@@ -178,6 +179,32 @@ function extractPostDate(postText) {
           detectedDate = new Date(Date.now() - num * 86400000);
           confidence = 80 - (num * 5);
           break;
+        }
+        // תאריכים עבריים כמו "10 בספט'"
+        else if (/^\d+\s+ב(ינו|פבר|מרץ|אפר|מאי|יונ|יול|אוג|ספט|אוק|נוב|דצמ)\'?$/.test(match[0])) {
+          const day = parseInt(match[1]);
+          const monthAbbr = match[2];
+          
+          // מיפוי קיצורי חודשים עבריים למספרים
+          const hebrewMonths = {
+            'ינו': 0, 'פבר': 1, 'מרץ': 2, 'אפר': 3, 'מאי': 4, 'יונ': 5,
+            'יול': 6, 'אוג': 7, 'ספט': 8, 'אוק': 9, 'נוב': 10, 'דצמ': 11
+          };
+          
+          const month = hebrewMonths[monthAbbr];
+          if (month !== undefined) {
+            const currentYear = new Date().getFullYear();
+            detectedDate = new Date(currentYear, month, day);
+            
+            // אם התאריך גדול מהיום (למשל, דצמבר כשאנחנו בינואר), זה כנראה שנה שעברה
+            if (detectedDate > new Date()) {
+              detectedDate.setFullYear(currentYear - 1);
+            }
+            
+            confidence = 90;
+            console.log(`🗓️ זוהה תאריך עברי: ${day} ב${monthAbbr} -> ${detectedDate.toLocaleDateString('he-IL')}`);
+            break;
+          }
         }
         // "היום" - ביטחון גבוה
         else if (match[0] === 'היום') {
@@ -352,26 +379,62 @@ async function checkPostStatusAfterPublish(page, groupUrl, groupName) {
                   '.timestampContent',
                   'abbr[data-utime]',
                   'time',
-                  'span[title]'
+                  'span[title]',
+                  // סלקטור חדש לתאריכים בפוסטים עם וידאו
+                  'span.html-span.xdj266r.x14z9mp.xat24cr.x1lziwak.xexx8yu.xyri2b.x18d9i69.x1c1uobl.x1hl2dhg.x16tdsg8.x1vvkbs.x4k7w5x.x1h91t0o.x1h9r5lt.x1jfb8zj.xv2umb2.x1beo9mf.xaigb6o.x12ejxvf.x3igimt.xarpa2k.xedcshv.x1lytzrv.x1t2pt76.x7ja8zs.x1qrby5j'
                 ];
                 
                 for (const dateSelector of dateSelectors) {
                   const dateElement = firstPost.querySelector(dateSelector) || document.querySelector(dateSelector);
                   if (dateElement) {
                     postDate = dateElement.textContent || dateElement.getAttribute('title') || '';
-                    if (postDate) break;
+                    if (postDate) {
+                      console.log(`✅ תאריך נמצא עם סלקטור: ${dateSelector} -> "${postDate}"`);
+                      break;
+                    }
                   }
                 }
                 
-                // אם לא נמצא תאריך ספציפי, חפש בכל הדף
+                // אם לא נמצא תאריך ספציפי, חפש בכל הדף בצורה מתקדמת יותר
                 if (!postDate) {
-                  const timeElements = [...document.querySelectorAll('*')].filter(el => {
+                  console.log(`🔍 לא נמצא תאריך עם הסלקטורים הרגילים, מחפש בכל הדף...`);
+                  
+                  // חיפוש ראשון - תאריכים יחסיים
+                  const relativeTimeElements = [...document.querySelectorAll('*')].filter(el => {
                     const text = el.textContent || el.innerText || '';
-                    return text.match(/(לפני|היום|אתמול|\d+\s+(דקות?|שעות?|ימים?)|\d{1,2}\/\d{1,2}\/\d{4})/) && text.length < 50;
+                    return text.match(/(לפני|היום|אתמול|\d+\s+(דקות?|שעות?|ימים?))/) && text.length < 50;
                   });
                   
-                  if (timeElements.length > 0) {
-                    postDate = timeElements[0].textContent || timeElements[0].innerText || '';
+                  if (relativeTimeElements.length > 0) {
+                    postDate = relativeTimeElements[0].textContent || relativeTimeElements[0].innerText || '';
+                    console.log(`✅ תאריך יחסי נמצא: "${postDate}"`);
+                  }
+                  
+                  // אם עדיין לא נמצא, חפש תאריכים בפורמט עברי
+                  if (!postDate) {
+                    const hebrewDateElements = [...document.querySelectorAll('*')].filter(el => {
+                      const text = el.textContent || el.innerText || '';
+                      // חיפוש תאריכים כמו "10 בספט'", "5 בינו'", "20 בדצמ'" וכו'
+                      return text.match(/\d+\s+ב(ינו|פבר|מרץ|אפר|מאי|יונ|יול|אוג|ספט|אוק|נוב|דצמ)\'?/) && text.length < 20;
+                    });
+                    
+                    if (hebrewDateElements.length > 0) {
+                      postDate = hebrewDateElements[0].textContent || hebrewDateElements[0].innerText || '';
+                      console.log(`✅ תאריך עברי נמצא: "${postDate}"`);
+                    }
+                  }
+                  
+                  // חיפוש נוסף - תאריכים בפורמט DD/MM או DD.MM
+                  if (!postDate) {
+                    const numericDateElements = [...document.querySelectorAll('*')].filter(el => {
+                      const text = el.textContent || el.innerText || '';
+                      return text.match(/\d{1,2}[\/\.]\d{1,2}/) && text.length < 30;
+                    });
+                    
+                    if (numericDateElements.length > 0) {
+                      postDate = numericDateElements[0].textContent || numericDateElements[0].innerText || '';
+                      console.log(`✅ תאריך מספרי נמצא: "${postDate}"`);
+                    }
                   }
                 }
                 

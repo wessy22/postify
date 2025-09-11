@@ -428,9 +428,54 @@ async function checkPostStatusAfterPublish(page, groupUrl, groupName) {
         console.log(`🔍 בודק טאב לספירה: "${fullText}"`);
         
         if (statusKeywords.some(keyword => fullText.toLowerCase().includes(keyword.toLowerCase())) && fullText.length < 200) {
-          const numberMatch = fullText.match(/(\d+)/);
-          if (numberMatch) {
-            const count = parseInt(numberMatch[1]);
+          // פונקציה לחילוץ מספר - גם מספרים וגם מילים
+          const extractNumber = (text) => {
+            // חיפוש מספר רגיל קודם
+            const numberMatch = text.match(/(\d+)/);
+            if (numberMatch) {
+              return parseInt(numberMatch[1]);
+            }
+            
+            // מפת מילים למספרים בעברית ואנגלית
+            const wordToNumber = {
+              // עברית
+              'אחד': 1, 'אחת': 1, 'יחיד': 1, 'יחידה': 1,
+              'שני': 2, 'שתי': 2, 'שניים': 2, 'שתיים': 2,
+              'שלושה': 3, 'שלוש': 3, 'שלושת': 3,
+              'ארבעה': 4, 'ארבע': 4, 'ארבעת': 4,
+              'חמישה': 5, 'חמש': 5, 'חמישת': 5,
+              'שישה': 6, 'שש': 6, 'שישת': 6,
+              'שבעה': 7, 'שבע': 7, 'שבעת': 7,
+              'שמונה': 8, 'שמונת': 8,
+              'תשעה': 9, 'תשע': 9, 'תשעת': 9,
+              'עשרה': 10, 'עשר': 10, 'עשרת': 10,
+              'עשרים': 20, 'שלושים': 30, 'ארבעים': 40, 'חמישים': 50,
+              // אנגלית
+              'one': 1, 'single': 1, 'a ': 1, 'an ': 1,
+              'two': 2, 'couple': 2, 'pair': 2,
+              'three': 3, 'four': 4, 'five': 5,
+              'six': 6, 'seven': 7, 'eight': 8,
+              'nine': 9, 'ten': 10,
+              'eleven': 11, 'twelve': 12, 'thirteen': 13,
+              'fourteen': 14, 'fifteen': 15, 'sixteen': 16,
+              'seventeen': 17, 'eighteen': 18, 'nineteen': 19,
+              'twenty': 20, 'thirty': 30, 'forty': 40, 'fifty': 50,
+              'hundred': 100
+            };
+            
+            // חיפוש מילות מספר
+            const lowerText = text.toLowerCase();
+            for (const [word, number] of Object.entries(wordToNumber)) {
+              if (lowerText.includes(word)) {
+                return number;
+              }
+            }
+            
+            return null;
+          };
+          
+          const count = extractNumber(fullText);
+          if (count !== null) {
             console.log(`📊 מצאתי מספר ${count} בטאב: "${fullText}"`);
             
             const lowerText = fullText.toLowerCase();
@@ -447,6 +492,8 @@ async function checkPostStatusAfterPublish(page, groupUrl, groupName) {
               result.removed = count;
               console.log(`✅ עדכנתי removed ל-${count}`);
             }
+          } else {
+            console.log(`⚠️ לא הצלחתי לחלץ מספר מהטקסט: "${fullText}"`);
           }
         }
       });
@@ -536,15 +583,15 @@ async function checkPostStatusAfterPublish(page, groupUrl, groupName) {
             
             console.log(`🔍 בודק טאב: "${combinedText}" (href: "${tabHref}") (spans: ${spans.length})`);
             
-            // בדיקה משופרת: גם הטקסט וגם ה-URL צריכים להתאים
+            // בדיקה משופרת: עדיפות לטקסט, אבל URL כתמיכה
             const textMatches = keywords.some(keyword => combinedText.includes(keyword.toLowerCase()));
             const urlMatches = urlKeywords.some(keyword => tabHref.includes(keyword.toLowerCase()));
             
             console.log(`  🔍 טקסט מתאים: ${textMatches ? '✅' : '❌'}`);
             console.log(`  🔍 URL מתאים: ${urlMatches ? '✅' : '❌'}`);
             
-            // שני התנאים צריכים להתקיים
-            const isCorrectTab = textMatches && urlMatches;
+            // לוגיקה משופרת: אם הטקסט מתאים, זה מספיק. אם לא, נדרוש גם URL
+            const isCorrectTab = textMatches || (urlMatches && combinedText.length > 0);
             
             console.log(`  📊 טאב נכון עבור ${expectedStatus}: ${isCorrectTab ? '✅ כן' : '❌ לא'}`);
             
@@ -597,6 +644,11 @@ async function checkPostStatusAfterPublish(page, groupUrl, groupName) {
           
           if (!hasPostsInTab) {
             console.log(`⚠️ לא מצאתי פוסטים בטאב ${tabConfig.status}, מדלג...`);
+            // עדכון מונה הפוסטים ל-0 עבור טאב זה
+            if (tabConfig.status === 'published') statusData.published = 0;
+            else if (tabConfig.status === 'pending') statusData.pending = 0;
+            else if (tabConfig.status === 'rejected') statusData.rejected = 0;
+            else if (tabConfig.status === 'removed') statusData.removed = 0;
             continue;
           }
         } else {
@@ -617,10 +669,10 @@ async function checkPostStatusAfterPublish(page, groupUrl, groupName) {
             
             let expectedIndicators = [];
             if (expectedStatus === 'published') {
-              expectedIndicators = ['published', 'פורסם', 'public', 'ציבורי', 'פרסומים'];
+              expectedIndicators = ['published', 'פורסם', 'public', 'ציבורי', 'פרסומים', 'פורסמו'];
             } else if (expectedStatus === 'pending') {
-              expectedIndicators = ['pending', 'ממתין', 'review', 'ביקורת', 'בהמתנה', 'אישור'];
-            } else if (expectedStatus === 'declined') {
+              expectedIndicators = ['pending', 'ממתין', 'review', 'ביקורת', 'בהמתנה', 'אישור', 'מחכה'];
+            } else if (expectedStatus === 'rejected') {
               expectedIndicators = ['declined', 'נדחה', 'rejected', 'נדחו'];
             } else if (expectedStatus === 'removed') {
               expectedIndicators = ['removed', 'הוסר', 'deleted', 'נמחק', 'הוסרו'];
@@ -630,11 +682,25 @@ async function checkPostStatusAfterPublish(page, groupUrl, groupName) {
               statusIndicators.includes(indicator)
             );
             
+            // חיפוש נוסף: בדיקה אם יש אלמנטים שמצביעים על פוסטים
+            const postElements = document.querySelectorAll([
+              '[data-testid="story-subtitle"]',
+              '[role="article"]',
+              'div[data-ft]',
+              '.userContentWrapper',
+              'div[style*="border"]',
+              'div[style*="padding"]'
+            ].join(','));
+            
+            const hasPostElements = postElements.length > 0;
+            
             console.log(`🔍 אימות תוכן טאב עבור ${expectedStatus}:`);
             console.log(`   URL: ${currentUrl}`);
             console.log(`   יש תוכן מתאים: ${hasExpectedContent}`);
+            console.log(`   יש אלמנטי פוסטים: ${hasPostElements}`);
             
-            return hasExpectedContent;
+            // אם אין תוכן מתאים אבל יש אלמנטי פוסטים, עדיין נחשב שהטאב תקין
+            return hasExpectedContent || hasPostElements;
           }, tabConfig.status);
           
           if (!tabContentValidation) {
@@ -752,15 +818,17 @@ async function checkPostStatusAfterPublish(page, groupUrl, groupName) {
             }
           }
         }
+        
+        console.log(`🔚 סיום בדיקת טאב ${tabConfig.status}. האם נמצא פוסט אחרון: ${latestPost === tabConfig.status ? 'כן' : 'לא'}`);
       } catch (error) {
         console.log(`⚠️ שגיאה בבדיקת טאב ${tabConfig.status}: ${error.message}`);
       }
-      
-      console.log(`🔚 סיום בדיקת טאב ${tabConfig.status}. האם נמצא פוסט אחרון: ${latestPost ? 'כן' : 'לא'}`);
     }
     
     // סיכום התוצאות
     let finalLatestPost = latestPost || 'unknown';
+    
+    console.log(`📊 סיכום סופי של מונה הפוסטים: Published=${statusData.published}, Pending=${statusData.pending}, Rejected=${statusData.rejected}, Removed=${statusData.removed}`);
     
     // Fallback - אם לא הצלחנו לזהות על פי תאריך, נשתמש בלוגיקה פשוטה
     if (!latestPost) {
@@ -793,12 +861,18 @@ async function checkPostStatusAfterPublish(page, groupUrl, groupName) {
           finalLatestPost = 'published';
           console.log(`🎯 Fallback: יש ${statusData.published} פוסטים מפורסמים ואין ממתינים או נדחים - הפוסט האחרון כנראה פורסם`);
         } else {
+          // זה המצב הבעייתי - אין פוסטים בשום טאב
+          console.log(`🚨 אזהרה: לא מצאתי שום פוסטים בשום סטטוס!`);
+          console.log(`⚠️ חשד חזק: הפרסום כנראה נכשל למרות ההודעה על הצלחה`);
+          console.log(`🔍 מומלץ לבדוק ידנית את הקבוצה בפייסבוק`);
           finalLatestPost = 'unknown';
-          console.log(`🎯 Fallback: לא מצאתי שום פוסטים בשום סטטוס`);
         }
       } else {
+        // אין פוסטים בשום טאב
+        console.log(`🚨 אזהרה: לא מצאתי שום פוסטים בשום סטטוס!`);
+        console.log(`⚠️ חשד חזק: הפרסום כנראה נכשל למרות ההודעה על הצלחה`);
+        console.log(`🔍 מומלץ לבדוק ידנית את הקבוצה בפייסבוק`);
         finalLatestPost = 'unknown';
-        console.log(`🎯 Fallback: לא מצאתי שום פוסטים בשום סטטוס`);
       }
     }
     

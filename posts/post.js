@@ -1036,7 +1036,7 @@ const triggerLinkRecognition = async (page, textbox) => {
   }
 };
 
-const humanType = async (element, text) => {
+const humanType = async (element, text, page) => {
   // נקה רווחים מיותרים ושורות ריקות
   let cleanText = text
     .replace(/\r\n/g, '\n') // המר CRLF ל-LF
@@ -1052,6 +1052,7 @@ const humanType = async (element, text) => {
   console.log("🧹 Cleaned text (first 200 chars):", JSON.stringify(cleanText.substring(0, 200)));
 
   let charsTyped = 0;
+  let firstNewlineHandled = false; // דגל לעקוב אחרי האנטר הראשון
   const typoFrequency = 150 + Math.floor(Math.random() * 100); // כל 150–250 תווים
 
   for (const char of cleanText) {
@@ -1063,7 +1064,17 @@ const humanType = async (element, text) => {
       await new Promise(r => setTimeout(r, 100));
     }
 
-    await element.type(char, { delay: 20 }); // הוספת delay לכל תו
+    // טיפול מיוחד באנטר הראשון - Shift+Enter במקום Enter רגיל
+    if (char === '\n' && !firstNewlineHandled) {
+      console.log("🔄 מעבד אנטר ראשון עם Shift+Enter לתצוגה טובה יותר");
+      await page.keyboard.down('Shift');
+      await page.keyboard.press('Enter');
+      await page.keyboard.up('Shift');
+      firstNewlineHandled = true;
+    } else {
+      await element.type(char, { delay: 20 }); // הוספת delay לכל תו
+    }
+    
     charsTyped++;
 
     const delay = 30 + Math.floor(Math.random() * 120);
@@ -1345,7 +1356,7 @@ if (!composerFound) {
     await page.waitForSelector('div[role="dialog"] div[role="textbox"]', { timeout: 40000 });
     const textbox = await page.$('div[role="dialog"] div[role="textbox"]');
     await textbox.click();
-    await humanType(textbox, postText);
+    await humanType(textbox, postText, page);
 
     // המתן לפייסבוק לעבד את הקישורים ולזהות אותם
     console.log("🔗 Waiting for Facebook to process links...");

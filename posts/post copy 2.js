@@ -321,32 +321,71 @@ function extractPostDate(postText) {
 async function checkPostStatusAfterPublish(page, groupUrl, groupName) {
   console.log(`🔍 בודק סטטוס פוסטים בקבוצה: ${groupName}`);
   
+  const maxRetries = 3; // מספר ניסיונות מקסימלי
+  const retryDelays = [30000, 45000, 60000]; // זמני timeout שונים (30, 45, 60 שניות)
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`🔄 ניסיון ${attempt}/${maxRetries} לבדיקת סטטוס...`);
+      
+      // בניית URL עם my_posted_content
+      const statusUrl = groupUrl.endsWith('/') 
+        ? groupUrl + 'my_posted_content' 
+        : groupUrl + '/my_posted_content';
+      
+      console.log(`🌐 נכנס לכתובת סטטוס: ${statusUrl} (timeout: ${retryDelays[attempt-1]}ms)`);
+      
+      // מעבר לעמוד הסטטוס עם timeout מותאם
+      await page.goto(statusUrl, {
+        waitUntil: "networkidle0", 
+        timeout: retryDelays[attempt-1]
+      });
+      
+      console.log(`✅ ניסיון ${attempt}: הדף נטען בהצלחה`);
+      break; // יצאנו מהלולאה כי הצלחנו
+      
+    } catch (navigationError) {
+      console.log(`⚠️ ניסיון ${attempt}/${maxRetries} נכשל: ${navigationError.message}`);
+      
+      if (attempt < maxRetries) {
+        console.log(`🔄 ממתין 10 שניות לפני ניסיון ${attempt + 1}...`);
+        await new Promise(resolve => setTimeout(resolve, 10000));
+      } else {
+        console.log(`❌ כל הניסיונות נכשלו, מחזיר תוצאת שגיאה`);
+        return {
+          published: 0,
+          pending: 0,
+          rejected: 0,
+          removed: 0,
+          latestPostStatus: 'error',
+          success: false,
+          error: `לא הצלחתי לטעון את דף הסטטוס אחרי ${maxRetries} ניסיונות`
+        };
+      }
+    }
+  }
+  
   try {
-    // בניית URL עם my_posted_content
-    const statusUrl = groupUrl.endsWith('/') 
-      ? groupUrl + 'my_posted_content' 
-      : groupUrl + '/my_posted_content';
-    
-    console.log(`🌐 נכנס לכתובת סטטוס: ${statusUrl}`);
-    
-    // מעבר לעמוד הסטטוס
-    await page.goto(statusUrl, {
-      waitUntil: "networkidle0", 
-      timeout: 30000
-    });
-    
     // המתנה לטעינה מלאה
+    console.log(`⏳ ממתין לטעינה מלאה של הדף...`);
     await new Promise(resolve => setTimeout(resolve, 5000));
     
     // גלילה קלה להפעלת התוכן
+    console.log(`🔄 מבצע גלילה להפעלת התוכן...`);
     await page.evaluate(() => {
       window.scrollBy(0, 100);
       setTimeout(() => window.scrollBy(0, -100), 1000);
     });
     await new Promise(resolve => setTimeout(resolve, 3000));
     
-    // חיפוש טאבים של סטטוסים
-    const statusData = await page.evaluate(() => {
+    // חיפוש טאבים של סטטוסים עם retry
+    let statusData = null;
+    const maxTabRetries = 2;
+    
+    for (let tabAttempt = 1; tabAttempt <= maxTabRetries; tabAttempt++) {
+      console.log(`🔍 ניסיון ${tabAttempt}/${maxTabRetries} לחיפוש טאבי סטטוס...`);
+      
+      statusData = await page.evaluate(() => {
       const tabs = [
         ...document.querySelectorAll('[role="tab"]'),
         ...document.querySelectorAll('button'),
@@ -389,9 +428,54 @@ async function checkPostStatusAfterPublish(page, groupUrl, groupName) {
         console.log(`🔍 בודק טאב לספירה: "${fullText}"`);
         
         if (statusKeywords.some(keyword => fullText.toLowerCase().includes(keyword.toLowerCase())) && fullText.length < 200) {
-          const numberMatch = fullText.match(/(\d+)/);
-          if (numberMatch) {
-            const count = parseInt(numberMatch[1]);
+          // פונקציה לחילוץ מספר - גם מספרים וגם מילים
+          const extractNumber = (text) => {
+            // חיפוש מספר רגיל קודם
+            const numberMatch = text.match(/(\d+)/);
+            if (numberMatch) {
+              return parseInt(numberMatch[1]);
+            }
+            
+            // מפת מילים למספרים בעברית ואנגלית
+            const wordToNumber = {
+              // עברית
+              'אחד': 1, 'אחת': 1, 'יחיד': 1, 'יחידה': 1,
+              'שני': 2, 'שתי': 2, 'שניים': 2, 'שתיים': 2,
+              'שלושה': 3, 'שלוש': 3, 'שלושת': 3,
+              'ארבעה': 4, 'ארבע': 4, 'ארבעת': 4,
+              'חמישה': 5, 'חמש': 5, 'חמישת': 5,
+              'שישה': 6, 'שש': 6, 'שישת': 6,
+              'שבעה': 7, 'שבע': 7, 'שבעת': 7,
+              'שמונה': 8, 'שמונת': 8,
+              'תשעה': 9, 'תשע': 9, 'תשעת': 9,
+              'עשרה': 10, 'עשר': 10, 'עשרת': 10,
+              'עשרים': 20, 'שלושים': 30, 'ארבעים': 40, 'חמישים': 50,
+              // אנגלית
+              'one': 1, 'single': 1, 'a ': 1, 'an ': 1,
+              'two': 2, 'couple': 2, 'pair': 2,
+              'three': 3, 'four': 4, 'five': 5,
+              'six': 6, 'seven': 7, 'eight': 8,
+              'nine': 9, 'ten': 10,
+              'eleven': 11, 'twelve': 12, 'thirteen': 13,
+              'fourteen': 14, 'fifteen': 15, 'sixteen': 16,
+              'seventeen': 17, 'eighteen': 18, 'nineteen': 19,
+              'twenty': 20, 'thirty': 30, 'forty': 40, 'fifty': 50,
+              'hundred': 100
+            };
+            
+            // חיפוש מילות מספר
+            const lowerText = text.toLowerCase();
+            for (const [word, number] of Object.entries(wordToNumber)) {
+              if (lowerText.includes(word)) {
+                return number;
+              }
+            }
+            
+            return null;
+          };
+          
+          const count = extractNumber(fullText);
+          if (count !== null) {
             console.log(`📊 מצאתי מספר ${count} בטאב: "${fullText}"`);
             
             const lowerText = fullText.toLowerCase();
@@ -408,6 +492,8 @@ async function checkPostStatusAfterPublish(page, groupUrl, groupName) {
               result.removed = count;
               console.log(`✅ עדכנתי removed ל-${count}`);
             }
+          } else {
+            console.log(`⚠️ לא הצלחתי לחלץ מספר מהטקסט: "${fullText}"`);
           }
         }
       });
@@ -415,23 +501,44 @@ async function checkPostStatusAfterPublish(page, groupUrl, groupName) {
       return result;
     });
     
+    if (statusData && (statusData.published > 0 || statusData.pending > 0 || statusData.rejected > 0 || statusData.removed > 0)) {
+      console.log(`✅ ניסיון ${tabAttempt}: מצאתי טאבי סטטוס בהצלחה`);
+      break; // יצאנו מהלולאה כי מצאנו טאבים
+    } else if (tabAttempt < maxTabRetries) {
+      console.log(`⚠️ ניסיון ${tabAttempt}: לא מצאתי טאבי סטטוס, ממתין 5 שניות...`);
+      await new Promise(resolve => setTimeout(resolve, 5000));
+    } else {
+      console.log(`❌ לא מצאתי טאבי סטטוס אחרי ${maxTabRetries} ניסיונות`);
+      statusData = {
+        published: 0,
+        pending: 0, 
+        rejected: 0,
+        removed: 0
+      };
+    }
+  }
+    
     // נסה לזהות את הפוסט האחרון על ידי כניסה לטאבים ובדיקת תאריכים אמיתיים
     const tabsToCheck = [
       { 
         keywords: ['בהמתנה', 'pending', 'Pending', 'מחכה לאישור', 'awaiting', 'review', 'approval'], 
-        status: 'pending' 
+        status: 'pending',
+        urlKeywords: ['pending', 'awaiting'] // מילות מפתח ספציפיות ל-URL
       },
       { 
-        keywords: ['פורסמו', 'published', 'Published', 'פרסומים', 'posts', 'Posts'], 
-        status: 'published' 
+        keywords: ['פורסמו', 'published', 'Published', 'פרסומים'], 
+        status: 'published',
+        urlKeywords: ['published', 'posts'] // רק אם ה-URL מכיל את המילים האלה
       },
       { 
         keywords: ['נדחו', 'rejected', 'Rejected', 'נדחה', 'declined', 'Declined'], 
-        status: 'rejected' 
+        status: 'rejected',
+        urlKeywords: ['rejected', 'declined']
       },
       { 
         keywords: ['הוסרו', 'removed', 'Removed', 'הוסר', 'deleted', 'Deleted'], 
-        status: 'removed' 
+        status: 'removed',
+        urlKeywords: ['removed', 'deleted']
       }
     ];
     
@@ -439,11 +546,13 @@ async function checkPostStatusAfterPublish(page, groupUrl, groupName) {
     let latestPostDate = null;
     
     console.log(`🔍 מתחיל בדיקה מתקדמת של הפוסט האחרון בין כל הטאבים...`);
+    console.log(`📊 נתוני טאבים שנמצאו: Published=${statusData.published}, Pending=${statusData.pending}, Rejected=${statusData.rejected}, Removed=${statusData.removed}`);
     
     for (const tabConfig of tabsToCheck) {
+      console.log(`\n🔍 מתחיל בדיקת טאב: ${tabConfig.status} עם מילות מפתח: ${tabConfig.keywords.join(', ')}`);
       try {
         // חיפוש הטאב - גישה מותאמת לממשק אנגלי ועברי
-        const tabFound = await page.evaluate((keywords) => {
+        const tabFound = await page.evaluate((keywords, urlKeywords, expectedStatus) => {
           const allTabs = [
             ...document.querySelectorAll('[role="tab"]'),
             ...document.querySelectorAll('button'),
@@ -457,11 +566,11 @@ async function checkPostStatusAfterPublish(page, groupUrl, groupName) {
             ...document.querySelectorAll('div:has(span)')
           ];
           
-          console.log(`🔍 חיפוש בין ${allTabs.length} טאבים אפשריים...`);
+          console.log(`🔍 חיפוש בין ${allTabs.length} טאבים אפשריים עבור ${expectedStatus}...`);
           
           for (const tab of allTabs) {
             const tabText = (tab.textContent || tab.innerText || '').toLowerCase();
-            const tabHref = tab.href || '';
+            const tabHref = (tab.href || '').toLowerCase();
             
             // חיפוש גם בתוך spans
             const spans = tab.querySelectorAll('span');
@@ -472,15 +581,21 @@ async function checkPostStatusAfterPublish(page, groupUrl, groupName) {
             
             const combinedText = (tabText + ' ' + spanTexts).trim();
             
-            console.log(`🔍 בודק טאב: "${combinedText}" (href: "${tabHref}")`);
+            console.log(`🔍 בודק טאב: "${combinedText}" (href: "${tabHref}") (spans: ${spans.length})`);
             
-            // בדיקה אם הטאב מכיל אחת ממילות המפתח
-            const matchesKeyword = keywords.some(keyword => 
-              combinedText.includes(keyword.toLowerCase()) || 
-              tabHref.includes(keyword.toLowerCase())
-            );
+            // בדיקה משופרת: עדיפות לטקסט, אבל URL כתמיכה
+            const textMatches = keywords.some(keyword => combinedText.includes(keyword.toLowerCase()));
+            const urlMatches = urlKeywords.some(keyword => tabHref.includes(keyword.toLowerCase()));
             
-            if (matchesKeyword && combinedText.length < 200 && combinedText.length > 0) {
+            console.log(`  🔍 טקסט מתאים: ${textMatches ? '✅' : '❌'}`);
+            console.log(`  🔍 URL מתאים: ${urlMatches ? '✅' : '❌'}`);
+            
+            // לוגיקה משופרת: אם הטקסט מתאים, זה מספיק. אם לא, נדרוש גם URL
+            const isCorrectTab = textMatches || (urlMatches && combinedText.length > 0);
+            
+            console.log(`  📊 טאב נכון עבור ${expectedStatus}: ${isCorrectTab ? '✅ כן' : '❌ לא'}`);
+            
+            if (isCorrectTab && combinedText.length < 200 && combinedText.length > 0) {
               try {
                 console.log(`✅ מצאתי טאב מתאים: "${combinedText}"`);
                 
@@ -499,75 +614,102 @@ async function checkPostStatusAfterPublish(page, groupUrl, groupName) {
             }
           }
           
-          console.log(`❌ לא מצאתי טאב עם מילות המפתח: ${keywords.join(', ')}`);
+          console.log(`❌ לא מצאתי טאב נכון עבור ${expectedStatus}`);
           return { success: false };
-        }, tabConfig.keywords);
+        }, tabConfig.keywords, tabConfig.urlKeywords, tabConfig.status);
         
         if (tabFound.success) {
           console.log(`✅ לחצתי על טאב: ${tabFound.clickedText} (href: ${tabFound.href || 'N/A'})`);
           await new Promise(resolve => setTimeout(resolve, 3000)); // יותר זמן להמתין
-        } else {
-          console.log(`❌ לא מצאתי טאב עבור ${tabConfig.status}, מנסה דרך חלופית...`);
           
-          // דרך חלופית - חיפוש ישיר בURL ובסלקטורים ספציפיים
-          const alternativeApproach = await page.evaluate((status) => {
-            // נסה למצוא קישורים שמכילים את הסטטוס בURL
-            const links = [...document.querySelectorAll('a[href]')];
+          // בדיקה אם יש פוסטים בטאב הזה
+          const hasPostsInTab = await page.evaluate(() => {
+            const postSelectors = [
+              '[data-testid="story-subtitle"]',
+              '[data-testid*="post"]',
+              '[role="article"]',
+              'div[data-ft]',
+              '.userContentWrapper',
+              'div[style*="border"]'
+            ];
             
-            const statusUrls = {
-              'pending': ['pending', 'awaiting', 'review'],
-              'published': ['published', 'posts'],
-              'rejected': ['rejected', 'declined'],
-              'removed': ['removed', 'deleted']
-            };
-            
-            const relevantUrls = statusUrls[status] || [];
-            
-            for (const link of links) {
-              const href = link.href.toLowerCase();
-              const text = (link.textContent || '').toLowerCase();
-              
-              if (relevantUrls.some(url => href.includes(url) || text.includes(url))) {
-                try {
-                  console.log(`🔄 מנסה קישור חלופי: ${href}`);
-                  link.click();
-                  return { success: true, clickedText: text, href: href };
-                } catch (e) {
-                  continue;
-                }
-              }
+            let foundPosts = 0;
+            for (const selector of postSelectors) {
+              foundPosts += document.querySelectorAll(selector).length;
             }
             
-            // דרך נוספת - חיפוש ישיר לפי span עם הטקסט
-            if (status === 'published') {
-              const publishedSpans = [...document.querySelectorAll('span')]
-                .filter(span => (span.textContent || '').toLowerCase().includes('published'));
-              
-              for (const span of publishedSpans) {
-                const clickableParent = span.closest('a, button, div[role="tab"], [tabindex], div[data-testid]');
-                if (clickableParent) {
-                  try {
-                    console.log(`🔄 מנסה ללחוץ על span published: ${span.textContent}`);
-                    clickableParent.click();
-                    return { success: true, clickedText: span.textContent, href: clickableParent.href || '' };
-                  } catch (e) {
-                    continue;
-                  }
-                }
-              }
-            }
-            
-            return { success: false };
-          }, tabConfig.status);
+            console.log(`📊 מצאתי ${foundPosts} פוסטים בטאב הנוכחי`);
+            return foundPosts > 0;
+          });
           
-          if (alternativeApproach.success) {
-            console.log(`✅ הצלחתי עם דרך חלופית: ${alternativeApproach.clickedText}`);
-            await new Promise(resolve => setTimeout(resolve, 3000));
-            tabFound.success = true; // עדכן שהצלחנו
+          if (!hasPostsInTab) {
+            console.log(`⚠️ לא מצאתי פוסטים בטאב ${tabConfig.status}, מדלג...`);
+            // עדכון מונה הפוסטים ל-0 עבור טאב זה
+            if (tabConfig.status === 'published') statusData.published = 0;
+            else if (tabConfig.status === 'pending') statusData.pending = 0;
+            else if (tabConfig.status === 'rejected') statusData.rejected = 0;
+            else if (tabConfig.status === 'removed') statusData.removed = 0;
+            continue;
           }
+        } else {
+          console.log(`❌ לא מצאתי טאב עבור ${tabConfig.status}, מדלג על טאב זה...`);
         }
         
         if (tabFound.success) {
+          
+          // אימות נוסף - בדיקה שאכן יש פוסטים מהסוג הנכון בטאב הזה
+          const tabContentValidation = await page.evaluate((expectedStatus) => {
+            const currentUrl = window.location.href.toLowerCase();
+            
+            // חיפוש אינדיקטורים לסוג הפוסטים בדף
+            const statusIndicators = [...document.querySelectorAll('*')].map(el => {
+              const text = (el.textContent || '').toLowerCase();
+              return text;
+            }).join(' ');
+            
+            let expectedIndicators = [];
+            if (expectedStatus === 'published') {
+              expectedIndicators = ['published', 'פורסם', 'public', 'ציבורי', 'פרסומים', 'פורסמו'];
+            } else if (expectedStatus === 'pending') {
+              expectedIndicators = ['pending', 'ממתין', 'review', 'ביקורת', 'בהמתנה', 'אישור', 'מחכה'];
+            } else if (expectedStatus === 'rejected') {
+              expectedIndicators = ['declined', 'נדחה', 'rejected', 'נדחו'];
+            } else if (expectedStatus === 'removed') {
+              expectedIndicators = ['removed', 'הוסר', 'deleted', 'נמחק', 'הוסרו'];
+            }
+            
+            const hasExpectedContent = expectedIndicators.some(indicator => 
+              statusIndicators.includes(indicator)
+            );
+            
+            // חיפוש נוסף: בדיקה אם יש אלמנטים שמצביעים על פוסטים
+            const postElements = document.querySelectorAll([
+              '[data-testid="story-subtitle"]',
+              '[role="article"]',
+              'div[data-ft]',
+              '.userContentWrapper',
+              'div[style*="border"]',
+              'div[style*="padding"]'
+            ].join(','));
+            
+            const hasPostElements = postElements.length > 0;
+            
+            console.log(`🔍 אימות תוכן טאב עבור ${expectedStatus}:`);
+            console.log(`   URL: ${currentUrl}`);
+            console.log(`   יש תוכן מתאים: ${hasExpectedContent}`);
+            console.log(`   יש אלמנטי פוסטים: ${hasPostElements}`);
+            
+            // אם אין תוכן מתאים אבל יש אלמנטי פוסטים, עדיין נחשב שהטאב תקין
+            return hasExpectedContent || hasPostElements;
+          }, tabConfig.status);
+          
+          if (!tabContentValidation) {
+            console.log(`⚠️ אימות תוכן הטאב נכשל עבור ${tabConfig.status} - ייתכן שלא נמצאים בטאב הנכון`);
+            // לא נמשיך לחפש פוסטים אם התוכן לא מתאים
+            continue;
+          }
+          
+          console.log(`✅ אימות תוכן הטאב הצליח עבור ${tabConfig.status}`);
           
           // חיפוש הפוסט הראשון בטאב עם תאריך
           const firstPostInfo = await page.evaluate(() => {
@@ -676,6 +818,8 @@ async function checkPostStatusAfterPublish(page, groupUrl, groupName) {
             }
           }
         }
+        
+        console.log(`🔚 סיום בדיקת טאב ${tabConfig.status}. האם נמצא פוסט אחרון: ${latestPost === tabConfig.status ? 'כן' : 'לא'}`);
       } catch (error) {
         console.log(`⚠️ שגיאה בבדיקת טאב ${tabConfig.status}: ${error.message}`);
       }
@@ -684,17 +828,71 @@ async function checkPostStatusAfterPublish(page, groupUrl, groupName) {
     // סיכום התוצאות
     let finalLatestPost = latestPost || 'unknown';
     
+    console.log(`📊 סיכום סופי של מונה הפוסטים: Published=${statusData.published}, Pending=${statusData.pending}, Rejected=${statusData.rejected}, Removed=${statusData.removed}`);
+    
     // Fallback - אם לא הצלחנו לזהות על פי תאריך, נשתמש בלוגיקה פשוטה
     if (!latestPost) {
       console.log(`❓ לא זוהה פוסט אחרון לפי תאריך, משתמש בלוגיקה fallback...`);
       
-      if (statusData.pending > 0) {
-        finalLatestPost = 'pending';
-        console.log(`🎯 Fallback: יש ${statusData.pending} פוסטים ממתינים - הפוסט האחרון כנראה בהמתנה`);
-      } else if (statusData.published > 0) {
-        finalLatestPost = 'published';
-        console.log(`🎯 Fallback: יש ${statusData.published} פוסטים מפורסמים ואין ממתינים - הפוסט האחרון כנראה פורסם`);
+      // שיטת חיפוש פשוטה - אם יש רק טאב אחד עם פוסטים
+      const tabsWithPosts = [];
+      if (statusData.published > 0) tabsWithPosts.push({name: 'published', count: statusData.published});
+      if (statusData.pending > 0) tabsWithPosts.push({name: 'pending', count: statusData.pending});
+      if (statusData.rejected > 0) tabsWithPosts.push({name: 'rejected', count: statusData.rejected});
+      if (statusData.removed > 0) tabsWithPosts.push({name: 'removed', count: statusData.removed});
+      
+      console.log(`📊 טאבים עם פוסטים: ${tabsWithPosts.map(t => `${t.name}(${t.count})`).join(', ')}`);
+      
+      if (tabsWithPosts.length === 1) {
+        // יש רק טאב אחד עם פוסטים - זה כנראה המקום הנכון
+        finalLatestPost = tabsWithPosts[0].name;
+        console.log(`🎯 Fallback חכם: יש פוסטים רק בטאב ${finalLatestPost} (${tabsWithPosts[0].count} פוסטים) - זה כנראה המקום הנכון!`);
+      } else if (tabsWithPosts.length > 1) {
+        console.log(`⚠️ יש פוסטים ב-${tabsWithPosts.length} טאבים שונים, משתמש בלוגיקה מקורית...`);
+        
+        // לוגיקה מתוקנת: תעדוף לפוסטים ממתינים (הסביר יותר שפוסט חדש ממתין)
+        if (statusData.pending > 0) {
+          finalLatestPost = 'pending';
+          console.log(`🎯 Fallback: יש ${statusData.pending} פוסטים ממתינים - הפוסט האחרון כנראה בהמתנה`);
+        } else if (statusData.rejected > 0) {
+          finalLatestPost = 'rejected';
+          console.log(`🎯 Fallback: יש ${statusData.rejected} פוסטים נדחים ואין ממתינים - הפוסט האחרון כנראה נדחה`);
+        } else if (statusData.published > 0) {
+          finalLatestPost = 'published';
+          console.log(`🎯 Fallback: יש ${statusData.published} פוסטים מפורסמים ואין ממתינים או נדחים - הפוסט האחרון כנראה פורסם`);
+        } else {
+          // זה המצב הבעייתי - אין פוסטים בשום טאב
+          console.log(`🚨 אזהרה: לא מצאתי שום פוסטים בשום סטטוס!`);
+          console.log(`⚠️ חשד חזק: הפרסום כנראה נכשל למרות ההודעה על הצלחה`);
+          console.log(`🔍 מומלץ לבדוק ידנית את הקבוצה בפייסבוק`);
+          finalLatestPost = 'unknown';
+        }
+      } else {
+        // אין פוסטים בשום טאב
+        console.log(`🚨 אזהרה: לא מצאתי שום פוסטים בשום סטטוס!`);
+        console.log(`⚠️ חשד חזק: הפרסום כנראה נכשל למרות ההודעה על הצלחה`);
+        console.log(`🔍 מומלץ לבדוק ידנית את הקבוצה בפייסבוק`);
+        finalLatestPost = 'unknown';
       }
+    }
+    
+    // בדיקה נוספת: אם יש רק טאב אחד עם פוסטים, נעדיף אותו על פני תוצאות תאריך לא מדויקות
+    const tabsWithPosts = [];
+    if (statusData.published > 0) tabsWithPosts.push({name: 'published', count: statusData.published});
+    if (statusData.pending > 0) tabsWithPosts.push({name: 'pending', count: statusData.pending});
+    if (statusData.rejected > 0) tabsWithPosts.push({name: 'rejected', count: statusData.rejected});
+    if (statusData.removed > 0) tabsWithPosts.push({name: 'removed', count: statusData.removed});
+    
+    console.log(`📊 טאבים עם פוסטים: ${tabsWithPosts.map(t => `${t.name}(${t.count})`).join(', ')}`);
+    
+    if (tabsWithPosts.length === 1) {
+      // יש רק טאב אחד עם פוסטים - זה כנראה המקום הנכון
+      const correctTab = tabsWithPosts[0].name;
+      if (finalLatestPost !== correctTab) {
+        console.log(`🔄 תיקון: זוהה טאב יחיד עם פוסטים (${correctTab}), מעדכן מ-${finalLatestPost} ל-${correctTab}`);
+        finalLatestPost = correctTab;
+      }
+      console.log(`🎯 Fallback חכם: יש פוסטים רק בטאב ${finalLatestPost} (${tabsWithPosts[0].count} פוסטים) - זה כנראה המקום הנכון!`);
     }
     
     console.log(`📊 תוצאות סריקת סטטוס עבור ${groupName}:`);
@@ -710,7 +908,8 @@ async function checkPostStatusAfterPublish(page, groupUrl, groupName) {
       rejected: statusData.rejected,
       removed: statusData.removed,
       latestPostStatus: finalLatestPost,
-      success: true
+      success: true,
+      retryUsed: true // מציין שהשתמשנו במנגנון retry
     };
     
   } catch (error) {

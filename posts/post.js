@@ -6,6 +6,10 @@ const path = require("path");
 const os = require("os");
 const config = require("./config.json");
 
+// מונה כשלונות רצופים - מתאפס בהצלחה
+let consecutiveFailures = 0;
+const MAX_CONSECUTIVE_FAILURES = 8;
+
 // פונקציית לוג לקובץ
 const LOG_FILE = path.join(__dirname, config.logFile || "log.txt");
 const logToFile = (text) => {
@@ -17,6 +21,68 @@ const logToFile = (text) => {
     console.error("⚠️ שגיאה בכתיבה ללוג:", e.message);
   }
 };
+
+// פונקציה לטיפול בכשלונות רצופים
+async function handleConsecutiveFailure() {
+  consecutiveFailures++;
+  console.log(`🔴 כשלון ${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES} ברצף`);
+  logToFile(`🔴 כשלון ${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES} ברצף`);
+  
+  if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+    const errorMessage = `
+🚨 התראה דחופה! 🚨
+
+המערכת נכשלה ${consecutiveFailures} פעמים ברצף!
+
+פירוט הבעיה:
+- ${consecutiveFailures} כשלונות פרסום רצופות
+- המערכת נכנסת למצב חירום
+- השרת ייכבה אוטומטית למניעת בזבוז משאבים
+
+פעולות שבוצעו:
+✅ שליחת התראה דחופה
+⚠️ המערכת תיכבה בעוד 30 שניות
+
+נדרש התערבות ידנית לפתרון הבעיה.
+
+בברכה,
+מערכת ניטור Postify`;
+
+    try {
+      console.log("🚨 שולח התראה דחופה למנהל המערכת...");
+      await sendErrorMail(
+        `🚨 התראה דחופה - ${consecutiveFailures} כשלונות רצופות!`,
+        errorMessage
+      );
+      console.log("📧 התראה דחופה נשלחה בהצלחה");
+    } catch (mailError) {
+      console.error("❌ שגיאה בשליחת התראה דחופה:", mailError.message);
+    }
+
+    console.log("🔴 המערכת נכנסת למצב חירום - כיבוי בעוד 30 שניות...");
+    await new Promise(resolve => setTimeout(resolve, 30000));
+    
+    console.log("💀 כיבוי המערכת...");
+    logToFile("💀 מערכת נכבית בגלל כשלונות רצופים");
+    
+    // כיבוי המחשב (Windows)
+    try {
+      execSync('shutdown /s /f /t 0');
+    } catch (e) {
+      console.error("❌ שגיאה בכיבוי המערכת:", e.message);
+      process.exit(1);
+    }
+  }
+}
+
+// פונקציה לאיפוס מונה הכשלונות בהצלחה
+function resetConsecutiveFailures() {
+  if (consecutiveFailures > 0) {
+    console.log(`✅ איפוס מונה כשלונות רצופים (היה: ${consecutiveFailures})`);
+    logToFile(`✅ איפוס מונה כשלונות רצופים (היה: ${consecutiveFailures})`);
+    consecutiveFailures = 0;
+  }
+}
 
 async function runWithTimeout(fn, ms = 12 * 60 * 1000) {
   let timeout;
@@ -1517,6 +1583,9 @@ if (!composerFound) {
     logToFile("✅ Post published successfully");
     postSuccessful = true; // ★ סימון שהפרסום הצליח
     
+    // איפוס מונה כשלונות רצופים בהצלחה
+    resetConsecutiveFailures();
+    
     // ★ בדיקת סטטוס פוסטים מיד אחרי פרסום מוצלח
     console.log("🔍 מתחיל בדיקת סטטוס פוסטים...");
     const statusResult = await checkPostStatusAfterPublish(page, groupUrl, groupName);
@@ -1597,6 +1666,10 @@ if (!composerFound) {
       let reason = global.__errorReason || err.message || "שגיאה לא ידועה";
       await sendErrorMail("❌ שגיאה בפרסום פוסט", `הפרסום נכשל. סיבה: ${reason}`);
     }
+    
+    // טיפול בכשלונות רצופים
+    await handleConsecutiveFailure();
+    
     process.exit(1);
   }
 }
@@ -1635,6 +1708,10 @@ async function runOnce() {
       let reason = global.__errorReason || err.message || "שגיאה לא ידועה";
       await sendErrorMail("❌ שגיאה בפרסום פוסט", `הפרסום נכשל. סיבה: ${reason}`);
     }
+    
+    // טיפול בכשלונות רצופים
+    await handleConsecutiveFailure();
+    
     process.exit(1);
   }
 }
@@ -1650,5 +1727,9 @@ runWithTimeout(() => runOnce(), 12 * 60 * 1000)
       let reason = global.__errorReason || err.message || "שגיאה לא ידועה";
       await sendErrorMail("❌ שגיאה בפרסום פוסט", `הפרסום נכשל. סיבה: ${reason}`);
     }
+    
+    // טיפול בכשלונות רצופים
+    await handleConsecutiveFailure();
+    
     process.exit(1);
   });

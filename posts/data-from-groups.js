@@ -115,34 +115,166 @@ process.on('SIGINT', async () => {
   process.exit(0);
 });
 
-async function scrollToBottom(page) {
-  console.log('🔄 מתחיל גלילה לתחתית הדף...');
+async function scrollAndCollectGroups(page) {
+  console.log('🔄 מתחיל גלילה ואיסוף קבוצות...');
   const delay = ms => new Promise(res => setTimeout(res, ms));
-  let previousHeight = await page.evaluate('document.body.scrollHeight');
-  console.log(`📏 גובה ראשוני של הדף: ${previousHeight}px`);
   
   let scrollAttempts = 0;
-  const maxScrollAttempts = 50; // מקסימום 50 ניסיונות גלילה
+  const maxScrollAttempts = 100; // הגדלתי ל-100 ניסיונות
+  const allCollectedGroups = new Map(); // משתמש ב-Map כדי למנוע כפילויות
+  let unchangedHeightCounter = 0;
+  let unchangedGroupsCounter = 0;
+  let previousHeight = 0;
+
+  // פונקציה בטוחה להערכת JavaScript
+  async function safeEvaluate(page, script) {
+    try {
+      return await page.evaluate(script);
+    } catch (error) {
+      if (error.message.includes('detached')) {
+        console.warn('⚠️ הדף נותק, מנסה שוב בעוד 3 שניות...');
+        await delay(3000);
+        try {
+          return await page.evaluate(script);
+        } catch (retryError) {
+          console.error('❌ שגיאה בניסיון שני:', retryError.message);
+          return null;
+        }
+      }
+      throw error;
+    }
+  }
+
+  // קבלת גובה ראשוני
+  try {
+    previousHeight = await safeEvaluate(page, () => document.body.scrollHeight);
+    if (previousHeight === null) {
+      console.error('❌ לא הצלחתי לקבל את גובה הדף הראשוני');
+      return [];
+    }
+    console.log(`📏 גובה ראשוני של הדף: ${previousHeight}px`);
+  } catch (error) {
+    console.error('❌ שגיאה בקבלת גובה הדף:', error.message);
+    return [];
+  }
 
   while (scrollAttempts < maxScrollAttempts) {
-    await page.evaluate('window.scrollTo(0, document.body.scrollHeight)');
-    await delay(1500); // תן לדף לטעון עוד תכנים
-    const newHeight = await page.evaluate('document.body.scrollHeight');
-    scrollAttempts++;
-    
-    console.log(`📏 ניסיון גלילה ${scrollAttempts}: גובה ${newHeight}px (קודם: ${previousHeight}px)`);
-    
-    if (newHeight === previousHeight) {
-      console.log(`✅ סיום גלילה אחרי ${scrollAttempts} ניסיונות – כל הקבוצות נטענו`);
-      break;
+    try {
+      // אסוף קבוצות מהמצב הנוכחי של הדף
+      const currentGroups = await safeEvaluate(page, () => {
+        const links = document.querySelectorAll('div[role="main"] a[href*="/groups/"][role="link"]');
+        return Array.from(links).map(link => ({
+          name: link.innerText.trim(),
+          url: link.href
+        })).filter(g => g.name && g.url && g.name !== "הצגת הקבוצה" && g.name !== "View Group");
+      });
+
+      if (currentGroups === null) {
+        console.warn('⚠️ לא הצלחתי לאסוף קבוצות, מדלג על הניסיון הזה');
+        scrollAttempts++;
+        await delay(3000);
+        continue;
+      }
+
+      const previousGroupsCount = allCollectedGroups.size;
+      
+      // הוסף קבוצות חדשות למפה
+      let newGroupsCount = 0;
+      for (const group of currentGroups) {
+        if (!allCollectedGroups.has(group.url)) {
+          allCollectedGroups.set(group.url, group);
+          newGroupsCount++;
+        }
+      }
+
+      console.log(`📊 ניסיון גלילה ${scrollAttempts + 1}: נמצאו ${currentGroups.length} קבוצות בדף, ${newGroupsCount} חדשות. סה"כ: ${allCollectedGroups.size}`);
+
+      // בדיקה אם לא נוספו קבוצות חדשות
+      if (allCollectedGroups.size === previousGroupsCount) {
+        unchangedGroupsCounter++;
+        console.log(`⚠️ לא נוספו קבוצות חדשות (${unchangedGroupsCounter}/5)`);
+      } else {
+        unchangedGroupsCounter = 0; // איפוס המונה כי נוספו קבוצות
+      }
+
+      // גלול למטה
+      const scrollResult = await safeEvaluate(page, () => {
+        window.scrollTo(0, document.body.scrollHeight);
+        return document.body.scrollHeight;
+      });
+
+      if (scrollResult === null) {
+        console.warn('⚠️ שגיאה בגלילה, מנסה שוב...');
+        await delay(3000);
+        scrollAttempts++;
+        continue;
+      }
+
+      await delay(2500); // המתנה ארוכה יותר לטעינת תוכן
+      
+      const newHeight = await safeEvaluate(page, () => document.body.scrollHeight);
+      if (newHeight === null) {
+        console.warn('⚠️ לא הצלחתי לקבל גובה חדש, מנסה שוב...');
+        await delay(3000);
+        scrollAttempts++;
+        continue;
+      }
+
+      scrollAttempts++;
+      
+      console.log(`📏 ניסיון גלילה ${scrollAttempts}: גובה ${newHeight}px (קודם: ${previousHeight}px)`);
+      
+      // בדיקה אם הדף לא גדל
+      if (newHeight === previousHeight) {
+        unchangedHeightCounter++;
+        console.log(`⚠️ הדף לא גדל (${unchangedHeightCounter}/5)`);
+      } else {
+        unchangedHeightCounter = 0; // איפוס המונה כי הדף גדל
+        previousHeight = newHeight;
+      }
+
+      // בדיקת תנאי עצירה: הדף לא גדל וגם לא נוספו קבוצות במשך 5 ניסיונות רצופים
+      if (unchangedHeightCounter >= 5 && unchangedGroupsCounter >= 5) {
+        console.log(`✅ עצירה: הדף לא גדל ולא נוספו קבוצות במשך 5 ניסיונות רצופים`);
+        console.log(`📋 סיכום סופי: נאספו ${allCollectedGroups.size} קבוצות ייחודיות`);
+        break;
+      }
+
+      // המתנה נוספת אם נגמרו הקבוצות אבל הדף עדיין גדל
+      if (unchangedGroupsCounter >= 3 && unchangedHeightCounter < 3) {
+        console.log(`⏳ המתנה נוספת - הדף עדיין גדל אבל אין קבוצות חדשות`);
+        await delay(5000); // המתנה ארוכה יותר
+      }
+      
+    } catch (error) {
+      console.error(`❌ שגיאה בניסיון גלילה ${scrollAttempts + 1}:`, error.message);
+      await delay(3000);
+      scrollAttempts++;
+      
+      if (error.message.includes('detached')) {
+        console.warn('⚠️ הדף נותק במהלך הגלילה. מנסה להמשיך...');
+        // נסה לרענן את הדף
+        try {
+          console.log('🔄 מנסה לרענן את הדף...');
+          await page.reload({ waitUntil: 'networkidle2', timeout: 30000 });
+          await delay(5000);
+          previousHeight = await safeEvaluate(page, () => document.body.scrollHeight) || previousHeight;
+          console.log('✅ הדף רוענן בהצלחה');
+        } catch (reloadError) {
+          console.error('❌ שגיאה בריענון הדף:', reloadError.message);
+        }
+      }
     }
-    
-    previousHeight = newHeight;
   }
   
   if (scrollAttempts >= maxScrollAttempts) {
-    console.log(`⚠️ הגעתי למקסימום ניסיונות גלילה (${maxScrollAttempts}), עוצר גלילה`);
+    console.log(`⚠️ הגעתי למקסימום ניסיונות גלילה (${maxScrollAttempts}), עוצר גלילה עם ${allCollectedGroups.size} קבוצות`);
   }
+
+  // החזר רשימה של כל הקבוצות שנמצאו
+  const finalGroups = Array.from(allCollectedGroups.values());
+  console.log(`📋 סיכום סופי: נאספו ${finalGroups.length} קבוצות ייחודיות במהלך הגלילה`);
+  return finalGroups;
 }
 
 (async () => {
@@ -204,31 +336,27 @@ async function scrollToBottom(page) {
     console.log('⏱️ ממתין 5 שניות לטעינה ראשונית...');
     await new Promise(res => setTimeout(res, 5000));
     
-    // שלב ראשון: גלול עד הסוף של הדף
-    await scrollToBottom(page);
+    // שלב ראשון: גלול ואסוף את כל הקבוצות במהלך הגלילה
+    const groupLinks = await scrollAndCollectGroups(page);
     console.log('⏱️ ממתין 3 שניות נוספות לוודא שהכול נטען...');
     await new Promise(res => setTimeout(res, 3000)); // לוודא שהכול נטען
 
-    // שלב שני: אסוף את כל הקבוצות לאחר הגלילה המלאה (רק מהאזור הראשי)
-    console.log('🔍 מחפש קישורי קבוצות בעמוד...');
-    const groupLinks = await page.$$eval('div[role="main"] a[href*="/groups/"][role="link"]', links => {
-      return links.map(link => ({
-        name: link.innerText.trim(),
-        url: link.href
-      })).filter(g => g.name && g.url && g.name !== "הצגת הקבוצה" && g.name !== "View Group");
-    });
-
-    writeDetailedLog(`נמצאו ${groupLinks.length} קבוצות אחרי טעינה מלאה`, 'INFO');
+    writeDetailedLog(`נמצאו ${groupLinks.length} קבוצות במהלך הגלילה`, 'INFO');
 
     let allGroups = [];
     let processedCount = 0;
     let successfulGroups = 0;
     let failedGroups = 0;
 
-    // שלב שלישי: סרוק את כל הקבוצות (רק מהאזור הראשי)
+    console.log(`🎯 מתחיל סריקה של ${groupLinks.length} קבוצות שנמצאו`);
+    writeDetailedLog(`התחלת סריקת ${groupLinks.length} קבוצות`, 'INFO');
+
+    // שלב שני: סרוק את כל הקבוצות שנמצאו במהלך הגלילה
     for (let group of groupLinks) {
       try {
         processedCount++;
+        console.log(`\n🔍 [${processedCount}/${groupLinks.length}] מעבד: ${group.name}`);
+        console.log(`🔗 URL: ${group.url}`);
         writeDetailedLog(`מעבד קבוצה ${processedCount}/${groupLinks.length}: ${group.name}`, 'INFO');
         
         const selector = `div[role="main"] a[href='${group.url}'][role='link']`;
@@ -322,7 +450,9 @@ async function scrollToBottom(page) {
           } catch (uploadError) {
             console.warn(`⚠️ שגיאה בשליחת עדכון ביניים: ${uploadError.message}`);
           }
-        }        } catch (e) {
+        }
+        
+      } catch (e) {
         writeDetailedLog(`שגיאה כללית בסריקת קבוצה: ${group.name} - ${e.message}`, 'ERROR');
         failedGroups++;
       }

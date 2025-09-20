@@ -6,6 +6,10 @@ const path = require("path");
 const os = require("os");
 const config = require("./config.json");
 
+// מונה כשלונות רצופים - מתאפס בהצלחה
+let consecutiveFailures = 0;
+const MAX_CONSECUTIVE_FAILURES = 8;
+
 // פונקציית לוג לקובץ
 const LOG_FILE = path.join(__dirname, config.logFile || "log.txt");
 const logToFile = (text) => {
@@ -17,6 +21,68 @@ const logToFile = (text) => {
     console.error("⚠️ שגיאה בכתיבה ללוג:", e.message);
   }
 };
+
+// פונקציה לטיפול בכשלונות רצופים
+async function handleConsecutiveFailure() {
+  consecutiveFailures++;
+  console.log(`🔴 כשלון ${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES} ברצף`);
+  logToFile(`🔴 כשלון ${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES} ברצף`);
+  
+  if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+    const errorMessage = `
+🚨 התראה דחופה! 🚨
+
+המערכת נכשלה ${consecutiveFailures} פעמים ברצף!
+
+פירוט הבעיה:
+- ${consecutiveFailures} כשלונות פרסום רצופות
+- המערכת נכנסת למצב חירום
+- השרת ייכבה אוטומטית למניעת בזבוז משאבים
+
+פעולות שבוצעו:
+✅ שליחת התראה דחופה
+⚠️ המערכת תיכבה בעוד 30 שניות
+
+נדרש התערבות ידנית לפתרון הבעיה.
+
+בברכה,
+מערכת ניטור Postify`;
+
+    try {
+      console.log("🚨 שולח התראה דחופה למנהל המערכת...");
+      await sendErrorMail(
+        `🚨 התראה דחופה - ${consecutiveFailures} כשלונות רצופות!`,
+        errorMessage
+      );
+      console.log("📧 התראה דחופה נשלחה בהצלחה");
+    } catch (mailError) {
+      console.error("❌ שגיאה בשליחת התראה דחופה:", mailError.message);
+    }
+
+    console.log("🔴 המערכת נכנסת למצב חירום - כיבוי בעוד 30 שניות...");
+    await new Promise(resolve => setTimeout(resolve, 30000));
+    
+    console.log("💀 כיבוי המערכת...");
+    logToFile("💀 מערכת נכבית בגלל כשלונות רצופים");
+    
+    // כיבוי המחשב (Windows)
+    try {
+      execSync('shutdown /s /f /t 0');
+    } catch (e) {
+      console.error("❌ שגיאה בכיבוי המערכת:", e.message);
+      process.exit(1);
+    }
+  }
+}
+
+// פונקציה לאיפוס מונה הכשלונות בהצלחה
+function resetConsecutiveFailures() {
+  if (consecutiveFailures > 0) {
+    console.log(`✅ איפוס מונה כשלונות רצופים (היה: ${consecutiveFailures})`);
+    logToFile(`✅ איפוס מונה כשלונות רצופים (היה: ${consecutiveFailures})`);
+    consecutiveFailures = 0;
+  }
+}
 
 async function runWithTimeout(fn, ms = 12 * 60 * 1000) {
   let timeout;
@@ -1036,7 +1102,38 @@ const triggerLinkRecognition = async (page, textbox) => {
   }
 };
 
-const humanType = async (element, text) => {
+// פונקציה ליצירת וריאציה בטקסט - הוספת רווח אקראי אחרי מילה
+function createTextVariation(originalText) {
+  if (!originalText || originalText.length < 10) {
+    return originalText; // אם הטקסט קצר מדי, אל תשנה
+  }
+
+  let text = originalText;
+  
+  // פיצול לפי רווחים כדי למצוא מילים
+  const words = text.split(' ');
+  
+  // אם יש פחות מ-3 מילים, אל תשנה
+  if (words.length < 3) {
+    return originalText;
+  }
+
+  // בחר מילה אקראית (לא הראשונה והלא האחרונה כדי לא לפגוע בעיצוב)
+  const randomWordIndex = Math.floor(Math.random() * (words.length - 2)) + 1;
+  
+  // הוסף רווח נוסף אחרי המילה הנבחרת
+  words[randomWordIndex] = words[randomWordIndex] + ' ';
+  
+  // חבר הכל בחזרה
+  text = words.join(' ');
+  
+  console.log(`🎲 וריאציית טקסט: נוסף רווח נוסף אחרי המילה "${words[randomWordIndex].trim()}" (מיקום ${randomWordIndex + 1})`);
+  console.log(`📏 אורך מקורי: ${originalText.length} -> אורך חדש: ${text.length}`);
+
+  return text;
+}
+
+const humanType = async (element, text, page) => {
   // נקה רווחים מיותרים ושורות ריקות
   let cleanText = text
     .replace(/\r\n/g, '\n') // המר CRLF ל-LF
@@ -1052,6 +1149,7 @@ const humanType = async (element, text) => {
   console.log("🧹 Cleaned text (first 200 chars):", JSON.stringify(cleanText.substring(0, 200)));
 
   let charsTyped = 0;
+  let firstNewlineHandled = false; // דגל לעקוב אחרי האנטר הראשון
   const typoFrequency = 150 + Math.floor(Math.random() * 100); // כל 150–250 תווים
 
   for (const char of cleanText) {
@@ -1063,7 +1161,17 @@ const humanType = async (element, text) => {
       await new Promise(r => setTimeout(r, 100));
     }
 
-    await element.type(char, { delay: 20 }); // הוספת delay לכל תו
+    // טיפול מיוחד באנטר הראשון - Shift+Enter במקום Enter רגיל
+    if (char === '\n' && !firstNewlineHandled) {
+      console.log("🔄 מעבד אנטר ראשון עם Shift+Enter לתצוגה טובה יותר");
+      await page.keyboard.down('Shift');
+      await page.keyboard.press('Enter');
+      await page.keyboard.up('Shift');
+      firstNewlineHandled = true;
+    } else {
+      await element.type(char, { delay: 20 }); // הוספת delay לכל תו
+    }
+    
     charsTyped++;
 
     const delay = 30 + Math.floor(Math.random() * 120);
@@ -1121,31 +1229,6 @@ async function main() {
 
     console.log("🧭 Looking for composer...");
 
-    async function findComposer(page) {
-      for (let scrollTry = 0; scrollTry < 10; scrollTry++) {
-        const buttons = await page.$$('div[role="button"]');
-        for (let button of buttons) {
-          const text = await page.evaluate(el => el.textContent, button);
-          if (
-            text.includes("כאן כותבים") ||
-            text.includes("Write something")
-          ) {
-            await button.click();
-            return true;
-          }
-        }
-        // גלילה איטית למטה במקום גלילה אחת של 800 פיקסלים
-        for (let i = 0; i < 8; i++) {
-          await page.evaluate(() => window.scrollBy(0, 100));
-          await new Promise(r => setTimeout(r, 400)); // 0.4 שניות בין כל גלילה
-        }
-        await new Promise(r => setTimeout(r, 10000)); // 10 שניות השהיה
-        await page.reload({ waitUntil: "networkidle2" });
-        await new Promise(r => setTimeout(r, 2000));
-      }
-      return false;
-    }
-
 // חיפוש composer ("כאן כותבים" או "Write something") עם עד 3 ניסיונות, כולל רענון וגלילה
 let composerFound = false;
 let composerOpened = false;
@@ -1173,7 +1256,7 @@ while (!composerFound && composerTry < 3) {
       await page.evaluate(() => window.scrollBy(0, 100));
       await new Promise(r => setTimeout(r, 400)); // 0.4 שניות בין כל גלילה
     }
-    await new Promise(r => setTimeout(r, 10000)); // 10 שניות השהיה
+    await new Promise(r => setTimeout(r, 2000)); // 2 שניות השהיה
     await page.reload({ waitUntil: "networkidle2" });
     await new Promise(r => setTimeout(r, 2000));
   }
@@ -1185,7 +1268,7 @@ if (!composerFound) {
 } else {
   // נבדוק אם נפתח דיאלוג כתיבה
   let openTry = 0;
-  while (!composerOpened && openTry < 3) {
+  while (!composerOpened && openTry < 2) {
     openTry++;
     try {
       await page.waitForSelector('div[role="dialog"] div[role="textbox"]', { timeout: 8000 });
@@ -1195,7 +1278,7 @@ if (!composerFound) {
       // בצע את כל התהליך מחדש: רענון, גלילה איטית, חיפוש ולחיצה
       composerFound = false;
       let retryTry = 0;
-      while (!composerFound && retryTry < 3) {
+      while (!composerFound && retryTry < 2) {
         retryTry++;
         await page.reload({ waitUntil: "networkidle2" });
         await new Promise(r => setTimeout(r, 2000));
@@ -1285,67 +1368,50 @@ if (!composerFound) {
           break;
         }
       }
-      // נסה שוב למצוא composer (כולל באנגלית)
+      // נסה שוב למצוא composer (חיפוש פשוט ללא רענונים)
       if (discussionTabFound) {
-        composerFound = await findComposer(page);
-      }
-    }
-
-    // אם עדיין לא נמצא - רענון נוסף, המתנה 2 דקות, גלילה איטית, ואם לא נמצא - שגיאה ומעבר לקבוצה הבאה
-    if (!composerFound) {
-      console.log("🔄 Composer still not found after 'דיון', refreshing again and waiting 2 minutes before last attempt...");
-      await page.reload({ waitUntil: "networkidle2" });
-      await new Promise(r => setTimeout(r, 120000)); // 2 דקות
-
-      // ניסיון אחרון: גלילה איטית ומציאת composer
-      composerFound = false;
-      for (let scrollTry = 0; scrollTry < 15; scrollTry++) {
         const buttons = await page.$$('div[role="button"]');
         for (let button of buttons) {
           const text = await page.evaluate(el => el.textContent, button);
-          if (
-            text.includes("כאן כותבים") ||
-            text.includes("Write something") ||
-            text.includes("התחל דיון") ||
-            text.toLowerCase().includes("start discussion")
-          ) {
+          if (text.includes("כאן כותבים") || text.includes("Write something")) {
             await button.click();
             composerFound = true;
+            console.log("✅ Found composer after clicking דיון tab!");
             break;
           }
         }
-        if (composerFound) break;
-        await page.evaluate(() => window.scrollBy(0, 200));
-        await new Promise(r => setTimeout(r, 700));
-      }
-
-      if (!composerFound) {
-        // צילום מסך לדיבוג
-        const debugPath = `C:\\temp\\composer-not-found-${Date.now()}.png`;
-        await page.screenshot({ path: debugPath });
-        console.log("❌ Composer not found after all attempts. Screenshot saved:", debugPath);
-        logToFile(`❌ Composer not found after all attempts. Screenshot: ${debugPath}`);
-        
-        // תיעוד לגוגל שיטס רק בניסיון האחרון
-        if (isLastAttempt) {
-          await logToSheet('Post failed', 'Error', groupName || groupUrl, groupPostIdentifier, postData.title || '', `לא נמצא כפתור "כאן כותבים" גם אחרי כל הניסיונות. Screenshot: ${debugPath}`);
-          console.log("📊 שגיאת Composer נרשמה לגוגל שיטס");
-          logToFile("📊 Composer error logged to Google Sheets");
+        if (!composerFound) {
+          console.log("❌ Still no composer found after דיון tab");
         }
-        
-        global.__errorReason = `לא נמצא composer בקבוצה: ${groupUrl} (Screenshot: ${debugPath})`;
-        await browser.close();
-        process.exit(1); // יציאה עם קוד שגיאה
       }
+    }
+
+    // אם עדיין לא נמצא אחרי כל השלבים - צילום מסך ושגיאה
+    if (!composerFound) {
+      // צילום מסך לדיבוג
+      const debugPath = `C:\\temp\\composer-not-found-${Date.now()}.png`;
+      await page.screenshot({ path: debugPath });
+      console.log("❌ Composer not found after all attempts. Screenshot saved:", debugPath);
+      logToFile(`❌ Composer not found after all attempts. Screenshot: ${debugPath}`);
+      
+      // הרישום לגוגל שיטס מטופל על ידי run-day.js כדי למנוע כפילות
+      
+      global.__errorReason = `לא נמצא composer בקבוצה: ${groupUrl} (Screenshot: ${debugPath})`;
+      await browser.close();
+      process.exit(1); // יציאה עם קוד שגיאה
     }
 
     console.log("📝 Typing post text...");
     console.log("🔍 Original post text length:", postText.length);
     console.log("🔍 Original post text (first 200 chars):", JSON.stringify(postText.substring(0, 200)));
+    
+    // יצירת וריאציה של הטקסט לפני הכתיבה
+    const variedPostText = createTextVariation(postText);
+    
     await page.waitForSelector('div[role="dialog"] div[role="textbox"]', { timeout: 40000 });
     const textbox = await page.$('div[role="dialog"] div[role="textbox"]');
     await textbox.click();
-    await humanType(textbox, postText);
+    await humanType(textbox, variedPostText, page);
 
     // המתן לפייסבוק לעבד את הקישורים ולזהות אותם
     console.log("🔗 Waiting for Facebook to process links...");
@@ -1457,12 +1523,7 @@ if (!composerFound) {
     if (!publishClicked) {
       console.log("❌ Publish button not found");
       logToFile("❌ Publish button not found");
-      // תיעוד לגוגל שיטס רק בניסיון האחרון
-      if (isLastAttempt) {
-        await logToSheet('Post failed', 'Error', groupName || groupUrl, groupPostIdentifier, postData.title || '', 'לא נמצא כפתור פרסום');
-        console.log("📊 שגיאת Publish button נרשמה לגוגל שיטס");
-        logToFile("📊 Publish button error logged to Google Sheets");
-      }
+      // הרישום לגוגל שיטס מטופל על ידי run-day.js כדי למנוע כפילות
       await browser.close();
       process.exit(1);
     }
@@ -1505,6 +1566,9 @@ if (!composerFound) {
     console.log("✅ Post published successfully");
     logToFile("✅ Post published successfully");
     postSuccessful = true; // ★ סימון שהפרסום הצליח
+    
+    // איפוס מונה כשלונות רצופים בהצלחה
+    resetConsecutiveFailures();
     
     // ★ בדיקת סטטוס פוסטים מיד אחרי פרסום מוצלח
     console.log("🔍 מתחיל בדיקת סטטוס פוסטים...");
@@ -1570,22 +1634,14 @@ if (!composerFound) {
     console.error("❌ Post publishing failed:", err.message);
     logToFile(`❌ Post publishing failed: ${err.message}`);
     
-    // תיעוד לגוגל שיטס רק בניסיון האחרון
-    if (isLastAttempt) {
-      const notesText = groupPostIdentifier || `שגיאה כללית: ${err.message}`;
-      // רישום שגיאה בעברית לעמודה G
-      const errorReason = global.__errorReason || err.message || "שגיאה לא ידועה";
-      await logToSheet('Post failed', 'Error', groupName || groupUrl, notesText, postData.title || '', errorReason);
-      console.log("📊 שגיאה כללית נרשמה לגוגל שיטס");
-      logToFile("📊 General error logged to Google Sheets");
-    }
+    // הרישום לגוגל שיטס מטופל על ידי run-day.js כדי למנוע כפילות
     if (browser) await browser.close();
 
-    // שליחת מייל רק בניסיון האחרון (למנוע כפילות)
-    if (isLastAttempt) {
-      let reason = global.__errorReason || err.message || "שגיאה לא ידועה";
-      await sendErrorMail("❌ שגיאה בפרסום פוסט", `הפרסום נכשל. סיבה: ${reason}`);
-    }
+    // שליחת מייל מטופלת על ידי run-day.js כדי למנוע כפילות
+    
+    // טיפול בכשלונות רצופים
+    await handleConsecutiveFailure();
+    
     process.exit(1);
   }
 }
@@ -1617,13 +1673,11 @@ async function runOnce() {
     }
     
     console.log("🔍 DEBUG: Error stack:", err.stack);
-    // תיעוד טיימאווט או שגיאה כללית - נשלח מ-run-day.js בכל המקרים
-    // אין צורך לכתוב כאן כדי למנוע כפילויות
-    if (!global.__errorMailSent && isLastAttempt) {
-      global.__errorMailSent = true;
-      let reason = global.__errorReason || err.message || "שגיאה לא ידועה";
-      await sendErrorMail("❌ שגיאה בפרסום פוסט", `הפרסום נכשל. סיבה: ${reason}`);
-    }
+    // שליחת מייל מטופלת על ידי run-day.js כדי למנוע כפילות
+    
+    // טיפול בכשלונות רצופים
+    await handleConsecutiveFailure();
+    
     process.exit(1);
   }
 }
@@ -1632,12 +1686,10 @@ async function runOnce() {
 // הפעלה חד-פעמית בלבד, ללא ריטריי
 runWithTimeout(() => runOnce(), 12 * 60 * 1000)
   .catch(async err => {
-    // טיפול בשגיאת טיימאוט - נשלח מ-run-day.js בכל המקרים
-    // אין צורך לכתוב כאן כדי למנוע כפילויות
-    if (!global.__errorMailSent && isLastAttempt) {
-      global.__errorMailSent = true;
-      let reason = global.__errorReason || err.message || "שגיאה לא ידועה";
-      await sendErrorMail("❌ שגיאה בפרסום פוסט", `הפרסום נכשל. סיבה: ${reason}`);
-    }
+    // שליחת מייל מטופלת על ידי run-day.js כדי למנוע כפילות
+    
+    // טיפול בכשלונות רצופים
+    await handleConsecutiveFailure();
+    
     process.exit(1);
   });

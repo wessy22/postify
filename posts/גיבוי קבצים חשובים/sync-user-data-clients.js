@@ -224,16 +224,35 @@ ${postsList}
   `.trim();
 
   try {
-    // 🚧 זמנית: שליחת מיילים רק למנהל המערכת
-    // שליחה למנהל המערכת בלבד
-    await sendMail(subject, textMessage, htmlMessage);
-    
     if (clientEmail) {
-      logMessage('INFO', `מייל התראה נשלח למנהל המערכת (שליחה ללקוח ${clientEmail} מושבתת זמנית) עבור ${postsWithFailures.length} פוסטים בעייתיים`);
-      console.log(`📧 מייל התראה נשלח למנהל המערכת (שליחה ללקוח ${clientEmail} מושבתת זמנית) על ${postsWithFailures.length} פוסטים בעייתיים`);
+      // שליחה ללקוח הספציפי
+      const { sendMail } = require("./mailer");
+      const config = require("./email-config");
+      const nodemailer = require("nodemailer");
+      
+      const transporter = nodemailer.createTransport({
+        service: "gmail",
+        auth: {
+          user: config.user,
+          pass: config.pass,
+        },
+      });
+      
+      await transporter.sendMail({
+        from: `"Postify" <${config.user}>`,
+        to: clientEmail,
+        subject,
+        text: textMessage,
+        html: htmlMessage,
+      });
+      
+      logMessage('INFO', `מייל התראה נשלח ללקוח ${clientEmail} עבור ${postsWithFailures.length} פוסטים בעייתיים`);
+      console.log(`📧 מייל התראה נשלח ללקוח ${clientEmail} על ${postsWithFailures.length} פוסטים בעייתיים`);
     } else {
-      logMessage('INFO', `מייל התראה נשלח למנהל המערכת עבור ${postsWithFailures.length} פוסטים בעייתיים`);
-      console.log(`📧 מייל התראה נשלח למנהל המערכת על ${postsWithFailures.length} פוסטים בעייתיים`);
+      // שליחה למייל ברירת המחדל
+      await sendMail(subject, textMessage, htmlMessage);
+      logMessage('INFO', `מייל התראה נשלח למייל ברירת מחדל עבור ${postsWithFailures.length} פוסטים בעייתיים`);
+      console.log(`📧 מייל התראה נשלח למייל ברירת מחדל על ${postsWithFailures.length} פוסטים בעייתיים`);
     }
   } catch (error) {
     logMessage('ERROR', `שגיאה בשליחת מייל ללקוח: ${error.message}`);

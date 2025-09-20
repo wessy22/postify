@@ -1,71 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 const { exec } = require('child_process');
-const { spawn } = require('child_process');
 const { sendErrorMail, sendMail } = require("./mailer");
 
 // קבוע לקובץ מצבי רוטציה
 const ROTATION_STATE_FILE = path.join(__dirname, "rotation-states.json");
-
-// ========== פונקציות ניהול Session (תואמות ל-post.js) ==========
-const BACKUP_DIR = path.join(__dirname, "session-backups");
-
-// וידוא שתיקיית הגיבוי קיימת
-if (!fs.existsSync(BACKUP_DIR)) {
-    fs.mkdirSync(BACKUP_DIR, { recursive: true });
-    console.log(`📁 Created session backup directory: ${BACKUP_DIR}`);
-}
-
-// פונקציה לבדיקת תקינות קבצי הגיבוי
-function validateSessionBackup() {
-    try {
-        const cookiesFile = path.join(BACKUP_DIR, 'cookies.json');
-        const sessionFile = path.join(BACKUP_DIR, 'session.json');
-        
-        if (fs.existsSync(cookiesFile) && fs.existsSync(sessionFile)) {
-            const cookies = JSON.parse(fs.readFileSync(cookiesFile));
-            const session = JSON.parse(fs.readFileSync(sessionFile));
-            
-            const isValid = Array.isArray(cookies) && typeof session === 'object' && session.timestamp;
-            const age = Date.now() - (session.timestamp || 0);
-            const maxAge = 24 * 60 * 60 * 1000; // 24 שעות
-            
-            if (isValid && age < maxAge) {
-                console.log(`✅ Session backup is valid (age: ${Math.round(age / (60 * 60 * 1000))}h)`);
-                return true;
-            } else {
-                console.log(`⚠️ Session backup is old or invalid (age: ${Math.round(age / (60 * 60 * 1000))}h)`);
-                return false;
-            }
-        }
-        return false;
-    } catch (error) {
-        console.log(`⚠️ Session backup validation failed: ${error.message}`);
-        return false;
-    }
-}
-
-// פונקציה לניקוי גיבויים ישנים
-function cleanOldBackups() {
-    try {
-        const files = fs.readdirSync(BACKUP_DIR);
-        const now = Date.now();
-        const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 ימים
-        
-        files.forEach(file => {
-            const filePath = path.join(BACKUP_DIR, file);
-            const stats = fs.statSync(filePath);
-            if (now - stats.mtime.getTime() > maxAge && file.includes('cookies_')) {
-                fs.unlinkSync(filePath);
-                console.log(`🗑️ Cleaned old backup: ${file}`);
-            }
-        });
-    } catch (error) {
-        console.log(`⚠️ Failed to clean old backups: ${error.message}`);
-    }
-}
-
-console.log("🔧 RUN-DAY initialized with enhanced session management");
 
 // ================================================================
 // RUNDAY - מערכת תזמון פוסטים משודרגת עם מניעת כפילויות תאריכים
@@ -982,19 +921,12 @@ function updateHeartbeat({ group, postFile, status, index }) {
   console.log("⚠️ לא ניתן לכתוב heartbeat לאף מקום - ממשיכים בלי heartbeat");
 }
 
-// ========== משתנים גלובליים לsignal handlers ==========
-let globalLog = null;
-let globalLogToSheet = null;
-
 (async () => {
   try {
     const path = require("path");
     const { spawn, exec } = require("child_process");
-    const logToSheet = require("./log-to-sheets");
-    const config = require("./config.json");
-
-    // הפיכת פונקציות לגלובליות
-    globalLogToSheet = logToSheet;
+  const logToSheet = require("./log-to-sheets");
+  const config = require("./config.json");
 
     // בדיקה אם רץ עם פרמטר --force-late
     if (process.argv.includes('--force-late')) {
@@ -1036,9 +968,6 @@ let globalLogToSheet = null;
       console.log(text);
       logStream.write(line + "\n");
     };
-
-    // הפיכת log לגלובלית לsignal handlers
-    globalLog = log;
 
     const day = new Date().getDay();
     const todayStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
@@ -1186,18 +1115,6 @@ let globalLogToSheet = null;
 
     // ============ לולאת פרסום חדשה עם resume, heartbeat וללא דוח יומי ============
     async function runPostsForToday(postsToday, isSpecificPost = false) {
-      // ניקוי session backups ישנים בתחילת היום
-      log("🧹 Cleaning old session backups...");
-      cleanOldBackups();
-      
-      // בדיקת תקינות session backup נוכחי
-      const sessionValid = validateSessionBackup();
-      if (sessionValid) {
-        log("✅ Current session backup is valid");
-      } else {
-        log("⚠️ No valid session backup found - browser will need fresh login");
-      }
-
       if (postsToday.length === 0) {
         log("✅ אין פוסטים מתאימים להיום.");
         await logToSheet("Day finished", "Success", "", "אין פוסטים מתאימים להיום");
@@ -1306,41 +1223,20 @@ let globalLogToSheet = null;
                 console.log("⚠️ לא ניתן לכתוב heartbeat:", e.message);
               }
 
-              // וידוא שהsession backup תקין לפני הפעלת post.js
-              const sessionValid = validateSessionBackup();
-              if (!sessionValid) {
-                log("⚠️ Session backup not valid - post.js will need to re-login");
-              }
-
               // העברת פרמטר retry כדי שpost.js לא יתעד בניסיונות ביניים
               const isRetry = retryCount > 0;
               const isLastAttempt = true; // תמיד הניסיון האחרון (1/1)
               const groupPostIdentifier = `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`;
               const retryParam = "--first"; // תמיד הניסיון הראשון והאחרון
               const lastAttemptParam = "--last"; // תמיד הניסיון האחרון
-              
-              log(`🚀 Starting post.js with session backup support...`);
-              const child = spawn("node", ["post.js", groupUrl, post.filename, retryParam, groupPostIdentifier, lastAttemptParam], { 
-                stdio: "inherit",
-                env: { ...process.env, POST_SESSION_BACKUP: 'enabled' }
-              });
+              const child = spawn("node", ["post.js", groupUrl, post.filename, retryParam, groupPostIdentifier, lastAttemptParam], { stdio: "inherit" });
 
-              // --- Graceful Timeout ---
+              // --- Timeout ---
               const TIMEOUT = 6 * 60 * 1000;
               let mailSent = false; // דגל למנוע שליחת מייל כפולה
               let timeoutId = setTimeout(async () => {
-                log(`⏰ Timeout! post.js לקח יותר מ־6 דקות. מנסה סגירה עדינה...`);
-                
-                // ניסיון סגירה עדינה תחילה
-                child.kill("SIGTERM");
-                
-                // אם לא נסגר תוך 10 שניות - כיבוי בכוח
-                setTimeout(() => {
-                  if (!child.killed) {
-                    log(`🚨 Force killing post.js after graceful attempt failed`);
-                    child.kill("SIGKILL");
-                  }
-                }, 10000);
+                log(`⏰ Timeout! post.js לקח יותר מ־6 דקות. סוגר תהליך וממשיך...`);
+                child.kill("SIGKILL");
                 
                 // תיעוד timeout לגוגל שיטס (תמיד הניסיון הסופי)
                 try {
@@ -2211,95 +2107,3 @@ Postify
     return;
   }
 })();
-
-// ========== Signal Handlers for Graceful Shutdown ==========
-let isShuttingDown = false;
-
-process.on('SIGINT', async () => {
-  if (isShuttingDown) return;
-  isShuttingDown = true;
-  
-  console.log('\n🔄 Received SIGINT - performing graceful shutdown...');
-  if (globalLog) globalLog('🔄 RUN-DAY: Graceful shutdown initiated by SIGINT');
-  
-  try {
-    // שמירת session backup אחרונה אם יש תהליך פעיל
-    const sessionValid = validateSessionBackup();
-    if (sessionValid && globalLog) {
-      globalLog('✅ Session backup is valid for next run');
-    }
-    
-    // רישום כיבוי לגיוגל שיטס
-    if (globalLogToSheet) {
-      try {
-        await globalLogToSheet("System shutdown", "Info", "", "מערכת כובתה ידנית (SIGINT)");
-      } catch (e) {
-        console.error('Failed to log shutdown to sheets:', e.message);
-      }
-    }
-    
-    if (globalLog) globalLog('✅ Graceful shutdown completed');
-  } catch (error) {
-    console.error('Error during graceful shutdown:', error.message);
-  }
-  
-  process.exit(0);
-});
-
-process.on('SIGTERM', async () => {
-  if (isShuttingDown) return;
-  isShuttingDown = true;
-  
-  console.log('\n🔄 Received SIGTERM - performing graceful shutdown...');
-  if (globalLog) globalLog('🔄 RUN-DAY: Graceful shutdown initiated by SIGTERM');
-  
-  try {
-    // שמירת session backup אחרונה
-    const sessionValid = validateSessionBackup();
-    if (sessionValid && globalLog) {
-      globalLog('✅ Session backup is valid for next run');
-    }
-    
-    // רישום כיבוי לגיוגל שיטס
-    if (globalLogToSheet) {
-      try {
-        await globalLogToSheet("System shutdown", "Info", "", "מערכת כובתה ידנית (SIGTERM)");
-      } catch (e) {
-        console.error('Failed to log shutdown to sheets:', e.message);
-      }
-    }
-    
-    if (globalLog) globalLog('✅ Graceful shutdown completed');
-  } catch (error) {
-    console.error('Error during graceful shutdown:', error.message);
-  }
-  
-  process.exit(0);
-});
-
-process.on('uncaughtException', async (error) => {
-  if (isShuttingDown) return;
-  isShuttingDown = true;
-  
-  console.error('🚨 Uncaught exception in run-day:', error.message);
-  if (globalLog) globalLog(`🚨 RUN-DAY: Uncaught exception: ${error.message}`);
-  
-  try {
-    // רישום שגיאה לגיוגל שיטס
-    if (globalLogToSheet) {
-      await globalLogToSheet("System error", "Error", "", `Uncaught exception: ${error.message}`);
-    }
-    
-    // שליחת מייל שגיאה דחופה
-    await sendErrorMail(
-      "🚨 RUN-DAY: Uncaught Exception", 
-      `שגיאה קריטית ב-run-day.js:\n\n${error.message}\n\n${error.stack}`
-    );
-  } catch (e) {
-    console.error('Failed to handle uncaught exception:', e.message);
-  }
-  
-  process.exit(1);
-});
-
-console.log("🎯 RUN-DAY initialized with enhanced session management and graceful shutdown");

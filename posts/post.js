@@ -1344,7 +1344,20 @@ async function main() {
       ]
     });
 
-    const page = await browser.newPage();
+    // שימוש בטאב הראשון במקום ליצור טאב חדש
+    const pages = await browser.pages();
+    const page = pages.length > 0 ? pages[0] : await browser.newPage();
+    console.log(`🗂️ משתמש בטאב קיים (${pages.length} טאבים נמצאו)`);
+    
+    // סגירת טאבים נוספים אם יש
+    const allPages = await browser.pages();
+    if (allPages.length > 1) {
+      console.log(`🧹 סוגר ${allPages.length - 1} טאבים נוספים...`);
+      for (let i = 1; i < allPages.length; i++) {
+        await allPages[i].close();
+      }
+    }
+    
     await page.setViewport({ width: 1280, height: 800 });
 
     // עדכון המשתנים הגלובליים לטיפול בsignals

@@ -122,9 +122,80 @@ function createDailySettingsFile(userSettings, userFolder) {
   }
 }
 
+// ========== פונקציונלי בדיקה האם כבר נשלח מייל היום ==========
+function getTodayString() {
+  return new Date().toISOString().split('T')[0]; // פורמט: YYYY-MM-DD
+}
+
+function getEmailCacheFilePath(userFolder) {
+  return path.join(userFolder, "email-cache.json");
+}
+
+function loadEmailCache(userFolder) {
+  const cacheFile = getEmailCacheFilePath(userFolder);
+  try {
+    if (fs.existsSync(cacheFile)) {
+      const data = JSON.parse(fs.readFileSync(cacheFile, 'utf-8'));
+      return data;
+    }
+  } catch (error) {
+    logMessage('WARN', `שגיאה בקריאת קובץ cache: ${error.message}`);
+  }
+  return { lastEmailDate: null, lastFailedPosts: [] };
+}
+
+function saveEmailCache(userFolder, failedPosts) {
+  const cacheFile = getEmailCacheFilePath(userFolder);
+  const cacheData = {
+    lastEmailDate: getTodayString(),
+    lastFailedPosts: failedPosts.map(post => ({
+      name: post.name,
+      title: post.title,
+      failedImages: post.failedImages,
+      originalImageCount: post.originalImageCount
+    })),
+    timestamp: new Date().toISOString()
+  };
+  
+  try {
+    fs.writeFileSync(cacheFile, JSON.stringify(cacheData, null, 2), 'utf-8');
+    logMessage('INFO', `נתוני cache נשמרו: ${cacheFile}`);
+  } catch (error) {
+    logMessage('ERROR', `שגיאה בשמירת cache: ${error.message}`);
+  }
+}
+
+function areFailureListsEqual(list1, list2) {
+  if (list1.length !== list2.length) return false;
+  
+  // מיין לפי name כדי להשוות בצורה עקבית
+  const sorted1 = [...list1].sort((a, b) => a.name.localeCompare(b.name));
+  const sorted2 = [...list2].sort((a, b) => a.name.localeCompare(b.name));
+  
+  for (let i = 0; i < sorted1.length; i++) {
+    if (sorted1[i].name !== sorted2[i].name ||
+        sorted1[i].failedImages !== sorted2[i].failedImages ||
+        sorted1[i].originalImageCount !== sorted2[i].originalImageCount) {
+      return false;
+    }
+  }
+  return true;
+}
+
 // ========== פונקציה לשליחת מייל ללקוח על כשלונות ==========
-async function sendClientFailureNotification(postsWithFailures, hostname, userSettings) {
+async function sendClientFailureNotification(postsWithFailures, hostname, userSettings, userFolder) {
   if (postsWithFailures.length === 0) return;
+
+  // בדיקה האם כבר נשלח מייל היום על אותן בעיות
+  const emailCache = loadEmailCache(userFolder);
+  const today = getTodayString();
+  
+  if (emailCache.lastEmailDate === today && 
+      areFailureListsEqual(postsWithFailures, emailCache.lastFailedPosts)) {
+    logMessage('INFO', 'מייל זהה כבר נשלח היום - מדלג על שליחה נוספת');
+    console.log('📧 מייל זהה כבר נשלח היום - מדלג על שליחה נוספת');
+    return;
+  }
 
   // נסה למצוא מייל לקוח מההגדרות
   let clientEmail = null;
@@ -227,6 +298,9 @@ ${postsList}
     // 🚧 זמנית: שליחת מיילים רק למנהל המערכת
     // שליחה למנהל המערכת בלבד
     await sendMail(subject, textMessage, htmlMessage);
+    
+    // שמירת המידע על המייל שנשלח ב-cache
+    saveEmailCache(userFolder, postsWithFailures);
     
     if (clientEmail) {
       logMessage('INFO', `מייל התראה נשלח למנהל המערכת (שליחה ללקוח ${clientEmail} מושבתת זמנית) עבור ${postsWithFailures.length} פוסטים בעייתיים`);
@@ -402,8 +476,8 @@ ${postsList}
 
     // שליחת מייל ללקוח אם יש כשלונות
     if (postsWithFailures.length > 0) {
-      console.log(`📧 נמצאו כשלונות ב-${postsWithFailures.length} פוסטים - שולח מייל התראה ללקוח...`);
-      await sendClientFailureNotification(postsWithFailures, hostname, userSettings);
+      console.log(`📧 נמצאו כשלונות ב-${postsWithFailures.length} פוסטים - בודק אם צריך לשלוח מייל התראה...`);
+      await sendClientFailureNotification(postsWithFailures, hostname, userSettings, userFolder);
     } else {
       console.log(`✅ כל הפוסטים סונכרנו בהצלחה מלאה - אין צורך במייל התראה`);
     }

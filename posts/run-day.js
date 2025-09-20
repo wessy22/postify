@@ -1136,12 +1136,46 @@ let globalLogToSheet = null;
       // מצב רגיל: לא פועל בשבת וחגים
       if (day === 6 || jewishHolidaysAndMemorials.includes(todayStr)) {
         log("🛑 שבת, חג או יום זיכרון — אין פרסום היום.");
+        log("💻 כיבוי מחשב אוטומטי יתחיל תוך 5 דקות...");
+        
+        // ספירה לאחור של 5 דקות (300 שניות)
+        for (let i = 300; i > 0; i--) {
+          const minutes = Math.floor(i / 60);
+          const seconds = i % 60;
+          process.stdout.write(`⏳ כיבוי מחשב בעוד ${minutes}:${seconds.toString().padStart(2, '0')}\r`);
+          await new Promise(r => setTimeout(r, 1000));
+        }
+        
+        console.log();
+        log("💤 כובה מחשב...");
+        
+        // כיבוי מחשב Windows
+        const { spawn } = require('child_process');
+        spawn('shutdown', ['/s', '/t', '0'], { detached: true });
+        
         process.exit(0);
       }
     } else {
       // מצב מבוטל הגבלת שבת: פועל כל השבוע כולל שבת, אך לא בחגים
       if (jewishHolidaysAndMemorials.includes(todayStr)) {
         log("🛑 חג או יום זיכרון — אין פרסום היום.");
+        log("💻 כיבוי מחשב אוטומטי יתחיל תוך 5 דקות...");
+        
+        // ספירה לאחור של 5 דקות (300 שניות)
+        for (let i = 300; i > 0; i--) {
+          const minutes = Math.floor(i / 60);
+          const seconds = i % 60;
+          process.stdout.write(`⏳ כיבוי מחשב בעוד ${minutes}:${seconds.toString().padStart(2, '0')}\r`);
+          await new Promise(r => setTimeout(r, 1000));
+        }
+        
+        console.log();
+        log("💤 כובה מחשב...");
+        
+        // כיבוי מחשב Windows
+        const { spawn } = require('child_process');
+        spawn('shutdown', ['/s', '/t', '0'], { detached: true });
+        
         process.exit(0);
       }
       log("✅ הגבלת שבת מבוטלת: מפרסם כל השבוע כולל שבת (חוץ מחגים).");

@@ -136,14 +136,9 @@ function readGroupsFromCSV(csvPath) {
         url = 'https://www.facebook.com/groups/' + url;
       }
       
-      // חלץ שם קבוצה מהURL
-      const urlParts = url.split('/');
-      const groupId = urlParts[urlParts.length - 1] || urlParts[urlParts.length - 2];
-      
       return {
         name: '', // ימולא בזמן הסריקה
-        url: url,
-        groupId: groupId
+        url: url
       };
     });
 
@@ -158,106 +153,293 @@ function readGroupsFromCSV(csvPath) {
   }
 }
 
-// פונקציה לסריקת קבוצה יחידה
-async function scanSingleGroup(page, group, index, total) {
+// פונקציה לבדיקה אם הדפדפן תקוע - מהירה
+async function isBrowserStuck(page) {
   try {
-    console.log(`\n🔍 [${index + 1}/${total}] מעבד קבוצה: ${group.url}`);
-    writeDetailedLog(`מעבד קבוצה ${index + 1}/${total}: ${group.url}`, 'INFO');
+    const startTime = Date.now();
+    await Promise.race([
+      page.evaluate(() => Date.now()),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Browser timeout')), 5000) // קיצרתי מ-10 ל-5 שניות
+      )
+    ]);
+    return false;
+  } catch (e) {
+    console.log('⚠️ הדפדפן לא מגיב - זוהה תקיעה');
+    return true;
+  }
+}
+
+// פונקציה לאתחול מלא של הדפדפן - מהירה ויעילה
+async function restartBrowser(oldBrowser, config, userDataDir) {
+  try {
+    console.log('🔄 מתחיל אתחול מהיר של הדפדפן...');
     
-    // נווט לדף הקבוצה
-    await page.goto(group.url, { waitUntil: "networkidle2", timeout: 30000 });
+    // סגור את הדפדפן הישן במקביל לפתיחת החדש
+    const closeOldBrowser = async () => {
+      try {
+        await Promise.race([
+          oldBrowser.close(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Close timeout')), 5000))
+        ]);
+        console.log('✅ דפדפן ישן נסגר');
+      } catch (e) {
+        console.log('⚠️ כפיית סגירת דפדפן ישן:', e.message);
+        try { await oldBrowser.process().kill('SIGKILL'); } catch(killError) {}
+      }
+    };
     
-    // המתן לטעינת הדף
-    await new Promise(res => setTimeout(res, 3000));
+    // המתן מינימלי לפני אתחול
+    await new Promise(res => setTimeout(res, 1000));
     
-    // חלץ פרטי הקבוצה
-    const groupDetails = await page.evaluate(() => {
-      // חפש את שם הקבוצה
-      let name = '';
-      const titleSelectors = [
-        'h1[data-testid="group-name"]',
-        'h1',
-        '[role="banner"] h1',
-        '[data-pagelet="GroupInformation"] h1'
-      ];
-      
-      for (const selector of titleSelectors) {
-        const element = document.querySelector(selector);
-        if (element && element.innerText && element.innerText.trim()) {
-          name = element.innerText.trim();
-          break;
-        }
-      }
-      
-      // חפש מספר חברים
-      let members = '';
-      const allSpans = Array.from(document.querySelectorAll('span, div, a'));
-      
-      // חפש תבניות שונות למספר החברים
-      const memberPatterns = [
-        /(\d+[\d,.]*)\s*חברים/i,
-        /(\d+[\d,.]*)\s*members/i,
-        /חברים\s*בקבוצה:\s*(\d+[\d,.]*)/i,
-        /members\s*in\s*group:\s*(\d+[\d,.]*)/i
-      ];
-      
-      for (const element of allSpans) {
-        if (!element.innerText) continue;
-        const text = element.innerText.trim();
-        
-        for (const pattern of memberPatterns) {
-          const match = text.match(pattern);
-          if (match) {
-            members = match[0]; // השתמש בכל הטקסט שנמצא
-            break;
-          }
-        }
-        
-        if (members) break;
-      }
-      
-      // חפש תמונת קבוצה
-      let image = null;
-      const imageSelectors = [
-        'image[href]',
-        'img[src*="scontent"]',
-        '[role="img"] image'
-      ];
-      
-      for (const selector of imageSelectors) {
-        const element = document.querySelector(selector);
-        if (element) {
-          image = element.getAttribute('href') || element.getAttribute('src') || element.getAttribute('xlink:href');
-          if (image && image.startsWith('http')) {
-            break;
-          }
-        }
-      }
-      
-      return { name, members, image };
+    // פתח דפדפן חדש בזמן שסוגר את הישן
+    const launchPromise = puppeteer.launch({
+      headless: false,
+      executablePath: config.chromePath,
+      userDataDir: userDataDir,
+      timeout: 15000,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--window-size=1280,800",
+        "--profile-directory=Default",
+        "--start-maximized",
+        "--disable-web-security",
+        "--disable-features=VizDisplayCompositor",
+        "--disable-background-timer-throttling",
+        "--disable-backgrounding-occluded-windows",
+        "--disable-renderer-backgrounding"
+      ]
     });
     
-    // עדכן את פרטי הקבוצה
-    group.name = groupDetails.name || `קבוצה ${index + 1}`;
-    group.members = groupDetails.members || '';
-    group.image = groupDetails.image || null;
+    // הפעל את שתי הפעולות במקביל
+    const [newBrowser] = await Promise.all([launchPromise, closeOldBrowser()]);
     
-    console.log(`✅ קבוצה נסרקה: ${group.name} | ${group.members}`);
-    writeDetailedLog(`קבוצה נסרקה בהצלחה: ${group.name} | ${group.members}`, 'SUCCESS');
+    const newPage = await newBrowser.newPage();
+    await newPage.setViewport({ width: 1920, height: 1080 });
     
-    return true;
+    // נווט לפייסבוק עם timeout קטן יותר
+    await Promise.race([
+      newPage.goto("https://www.facebook.com", {
+        waitUntil: "domcontentloaded", timeout: 20000
+      }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Facebook load timeout')), 20000))
+    ]);
+    
+    console.log('✅ דפדפן חדש מוכן לעבודה');
+    return { browser: newBrowser, page: newPage };
     
   } catch (error) {
-    console.error(`❌ שגיאה בסריקת קבוצה ${group.url}: ${error.message}`);
-    writeDetailedLog(`שגיאה בסריקת קבוצה ${group.url}: ${error.message}`, 'ERROR');
-    
-    // מלא פרטים בסיסיים אם הסריקה נכשלה
-    group.name = group.name || `קבוצה ${index + 1}`;
-    group.members = '';
-    group.image = null;
-    
-    return false;
+    console.error('❌ שגיאה באתחול דפדפן:', error.message);
+    throw error;
   }
+}
+async function scanSingleGroup(page, group, index, total, browser, config, userDataDir) {
+  const maxRetries = 2; // הקטנתי את מספר הניסיונות
+  let attempt = 0;
+  let currentPage = page;
+  let currentBrowser = browser;
+  
+  while (attempt < maxRetries) {
+    try {
+      console.log(`\n🔍 [${index + 1}/${total}] מעבד קבוצה: ${group.url} (ניסיון ${attempt + 1}/${maxRetries})`);
+      writeDetailedLog(`מעבד קבוצה ${index + 1}/${total}: ${group.url} (ניסיון ${attempt + 1}/${maxRetries})`, 'INFO');
+      
+      // בדיקה מהירה אם הדפדפן תקוע
+      if (await isBrowserStuck(currentPage)) {
+        console.log('🔄 מתאחל דפדפן מהירה...');
+        const newBrowserData = await restartBrowser(currentBrowser, config, userDataDir);
+        currentBrowser = newBrowserData.browser;
+        currentPage = newBrowserData.page;
+        writeDetailedLog('דפדפן אותחל בגלל תקיעה', 'WARNING');
+      }
+      
+      // בדיקה בסיסית אם הדף עדיין חי
+      try {
+        await currentPage.evaluate(() => document.title);
+      } catch (e) {
+        console.log('⚠️ הדף נותק, יוצר דף חדש...');
+        writeDetailedLog('הדף נותק, יוצר דף חדש', 'WARNING');
+        try {
+          await currentPage.close();
+        } catch (closeError) {}
+        currentPage = await currentBrowser.newPage();
+        await currentPage.setViewport({ width: 1920, height: 1080 });
+      }
+      
+      // נווט לדף הקבוצה עם timeout קטן יותר
+      console.log(`📱 נווט לקבוצה: ${group.url}`);
+      await Promise.race([
+        currentPage.goto(group.url, { 
+          waitUntil: "domcontentloaded", 
+          timeout: 30000 
+        }),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Navigation timeout - 30s')), 30000)
+        )
+      ]);
+      
+      // המתן מקוצר לטעינת הדף
+      console.log('⏳ ממתין לטעינת הדף...');
+      for (let wait = 0; wait < 3; wait++) { // קיצרתי מ-4 ל-3
+        await new Promise(res => setTimeout(res, 800)); // קיצרתי מ-1000 ל-800
+        if (await isBrowserStuck(currentPage)) {
+          throw new Error('Browser stuck during page load');
+        }
+      }
+      
+      // חלץ פרטי הקבוצה עם timeout קטן יותר
+      let groupDetails;
+      try {
+        console.log('🔍 מחלץ נתונים מהקבוצה...');
+        
+        // בדיקת תקיעה מהירה לפני חילוץ נתונים
+        if (await isBrowserStuck(currentPage)) {
+          throw new Error('Browser stuck before data extraction');
+        }
+        
+        groupDetails = await Promise.race([
+          currentPage.evaluate(() => {
+            // חפש את שם הקבוצה
+            let name = '';
+            const titleSelectors = [
+              'h1[data-testid="group-name"]',
+              'h1',
+              '[role="banner"] h1',
+              '[data-pagelet="GroupInformation"] h1'
+            ];
+            
+            for (const selector of titleSelectors) {
+              const element = document.querySelector(selector);
+              if (element && element.innerText && element.innerText.trim()) {
+                name = element.innerText.trim();
+                break;
+              }
+            }
+            
+            // חפש מספר חברים - לפי המקום החדש שציינת
+            let members = '';
+            
+            // חפש את הלינק עם הטקסט "חברים בקבוצה"
+            const memberLink = document.querySelector('a[href*="/members/"]');
+            if (memberLink && memberLink.innerText) {
+              const text = memberLink.innerText.trim();
+              // חלץ את מספר החברים מהטקסט
+              const match = text.match(/(\d+(?:[.,]\d+)*[KMכאלף]*)\s*חברים/i);
+              if (match) {
+                members = match[0]; // השתמש בכל הטקסט שנמצא
+              } else {
+                members = text; // אם לא נמצא pattern ספציפי, קח את כל הטקסט
+              }
+            }
+            
+            // אם לא נמצא במקום הספציפי, חפש בכל הדף
+            if (!members) {
+              const allElements = Array.from(document.querySelectorAll('span, div, a'));
+              
+              // חפש תבניות שונות למספר החברים
+              const memberPatterns = [
+                /(\d+(?:[.,]\d+)*[KMכאלף]*)\s*חברים\s*בקבוצה/i,
+                /(\d+(?:[.,]\d+)*[KMכאלף]*)\s*חברים/i,
+                /(\d+(?:[.,]\d+)*[KMכאלף]*)\s*members\s*in\s*group/i,
+                /(\d+(?:[.,]\d+)*[KMכאלף]*)\s*members/i
+              ];
+              
+              for (const element of allElements) {
+                if (!element.innerText) continue;
+                const text = element.innerText.trim();
+                
+                for (const pattern of memberPatterns) {
+                  const match = text.match(pattern);
+                  if (match) {
+                    members = match[0]; // השתמש בכל הטקסט שנמצא
+                    break;
+                  }
+                }
+                
+                if (members) break;
+              }
+            }
+            
+            // חפש תמונת קבוצה
+            let image = null;
+            const imageSelectors = [
+              'image[href]',
+              'img[src*="scontent"]',
+              '[role="img"] image'
+            ];
+            
+            for (const selector of imageSelectors) {
+              const element = document.querySelector(selector);
+              if (element) {
+                image = element.getAttribute('href') || element.getAttribute('src') || element.getAttribute('xlink:href');
+                if (image && image.startsWith('http')) {
+                  break;
+                }
+              }
+            }
+            
+            return { name, members, image };
+          }),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Data extraction timeout - 10s')), 10000)
+          )
+        ]);
+      } catch (evalError) {
+        console.warn(`⚠️ שגיאה בחילוץ נתונים (ניסיון ${attempt + 1}): ${evalError.message}`);
+        if (attempt === maxRetries - 1) {
+          throw evalError;
+        }
+        attempt++;
+        await new Promise(res => setTimeout(res, 1000));
+        continue;
+      }
+      
+      // עדכן את פרטי הקבוצה
+      group.name = groupDetails.name || `קבוצה ${index + 1}`;
+      group.members = groupDetails.members || '';
+      group.image = groupDetails.image || null;
+      
+      console.log(`✅ קבוצה נסרקה: ${group.name} | ${group.members}`);
+      writeDetailedLog(`קבוצה נסרקה בהצלחה: ${group.name} | ${group.members}`, 'SUCCESS');
+      
+      return { success: true, page: currentPage, browser: currentBrowser };
+      
+    } catch (error) {
+      attempt++;
+      console.error(`❌ שגיאה בסריקת קבוצה ${group.url} (ניסיון ${attempt}/${maxRetries}): ${error.message}`);
+      writeDetailedLog(`שגיאה בסריקת קבוצה ${group.url} (ניסיון ${attempt}/${maxRetries}): ${error.message}`, 'ERROR');
+      
+      if (attempt >= maxRetries) {
+        // מלא פרטים בסיסיים אם כל הניסיונות נכשלו
+        group.name = group.name || `קבוצה ${index + 1}`;
+        group.members = '';
+        group.image = null;
+        return { success: false, page: currentPage, browser: currentBrowser };
+      }
+      
+      // המתנה קצרה לפני ניסיון חוזר
+      const retryWait = 1500; // קיצרתי משמעותית את זמן ההמתנה
+      console.log(`⏳ ממתין ${retryWait/1000} שניות לפני ניסיון חוזר...`);
+      await new Promise(res => setTimeout(res, retryWait));
+      
+      // אם זה שגיאת timeout או תקיעה - אתחל דפדפן במהירות
+      if (error.message.includes('timeout') || error.message.includes('stuck') || 
+          error.message.includes('detached') || error.message.includes('Detached')) {
+        try {
+          console.log('🔄 מתאחל דפדפן מהירה בגלל שגיאה...');
+          const newBrowserData = await restartBrowser(currentBrowser, config, userDataDir);
+          currentBrowser = newBrowserData.browser;
+          currentPage = newBrowserData.page;
+          writeDetailedLog('דפדפן אותחל בגלל שגיאה', 'WARNING');
+        } catch (restartError) {
+          console.error('❌ שגיאה באתחול דפדפן:', restartError.message);
+        }
+      }
+    }
+  }
+  
+  return { success: false, page: currentPage, browser: currentBrowser };
 }
 
 (async () => {
@@ -323,9 +505,9 @@ async function scanSingleGroup(page, group, index, total) {
     });
     writeDetailedLog('העמוד נטען בהצלחה', 'SUCCESS');
 
-    // המתן 3 שניות לטעינה ראשונית
-    console.log('⏱️ ממתין 3 שניות לטעינה ראשונית...');
-    await new Promise(res => setTimeout(res, 3000));
+    // המתן קצר לטעינה ראשונית
+    console.log('⏱️ ממתין שנייה אחת לטעינה ראשונית...');
+    await new Promise(res => setTimeout(res, 1000));
     
     let allGroups = [];
     let processedCount = 0;
@@ -336,13 +518,20 @@ async function scanSingleGroup(page, group, index, total) {
     writeDetailedLog(`התחלת סריקת ${groupsFromCSV.length} קבוצות מ-CSV`, 'INFO');
 
     // סרוק כל קבוצה מהרשימה
+    let currentBrowser = browser;
+    let currentPage = page;
+    
     for (let i = 0; i < groupsFromCSV.length; i++) {
       const group = groupsFromCSV[i];
       processedCount++;
       
-      const success = await scanSingleGroup(page, group, i, groupsFromCSV.length);
+      const result = await scanSingleGroup(currentPage, group, i, groupsFromCSV.length, currentBrowser, config, userDataDir);
       
-      if (success && group.name && group.name !== "הצגת הקבוצה" && group.name !== "View Group") {
+      // עדכון reference לדף ודפדפן במקרה שהם שונו
+      currentPage = result.page;
+      currentBrowser = result.browser;
+      
+      if (result.success && group.name && group.name !== "הצגת הקבוצה" && group.name !== "View Group") {
         allGroups.push(group);
         successfulGroups++;
       } else {
@@ -384,10 +573,18 @@ async function scanSingleGroup(page, group, index, total) {
         }
       }
       
-      // המתנה בין קבוצות כדי לא לעמוס על השרת
+      // המתנה קצרה בין קבוצות - זריזות מירבית
       if (i < groupsFromCSV.length - 1) {
-        console.log('⏱️ ממתין 2 שניות לפני הקבוצה הבאה...');
-        await new Promise(res => setTimeout(res, 2000));
+        const waitTime = failedGroups > successfulGroups / 3 ? 2500 : 1500; // קיצרתי משמעותית
+        console.log(`⏱️ ממתין ${waitTime/1000} שניות לפני הקבוצה הבאה...`);
+        await new Promise(res => setTimeout(res, waitTime));
+      }
+      
+      // בדיקה אם יש יותר מדי כשלונות רצופים - הפסקה קצרה
+      if (failedGroups > 0 && failedGroups % 3 === 0 && failedGroups > successfulGroups) {
+        console.log(`⚠️ זוהו ${failedGroups} כשלונות - הפסקה של 5 שניות לייצוב...`);
+        writeDetailedLog(`הפסקה קצרה בגלל ${failedGroups} כשלונות רצופים`, 'WARNING');
+        await new Promise(res => setTimeout(res, 5000));
       }
     }
 
@@ -486,7 +683,7 @@ async function scanSingleGroup(page, group, index, total) {
     console.log(`   - groups-postify-csv.json`);
     
     writeDetailedLog('סוגר דפדפן...', 'INFO');
-    await browser.close();
+    await currentBrowser.close();
     writeDetailedLog('דפדפן נסגר בהצלחה', 'SUCCESS');
   } catch (err) {
     writeDetailedLog(`שגיאה קריטית בסקריפט הראשי: ${err.message}`, 'CRITICAL');

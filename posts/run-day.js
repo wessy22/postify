@@ -1362,8 +1362,10 @@ let globalLogToSheet = null;
               // --- Graceful Timeout ---
               const TIMEOUT = 6 * 60 * 1000;
               let mailSent = false; // דגל למנוע שליחת מייל כפולה
+              let timeoutOccurred = false; // דגל לזיהוי timeout
               let timeoutId = setTimeout(async () => {
                 log(`⏰ Timeout! post.js לקח יותר מ־6 דקות. מנסה סגירה עדינה...`);
+                timeoutOccurred = true; // מסמן ש-timeout אירע
                 
                 // ניסיון סגירה עדינה תחילה
                 child.kill("SIGTERM");
@@ -1381,6 +1383,7 @@ let globalLogToSheet = null;
                   const groupName = fs.readFileSync(CURRENT_GROUP_NAME_FILE, "utf-8").trim();
                   await logToSheet("Post failed", "Error", cleanGroupName(groupName), `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`, post.title || post.filename, "הפרסום נתקע (timeout) ונעצר אוטומטית");
                   log("📊 Timeout נרשם לגוגל שיטס");
+                  log(`🔍 DEBUG: Timeout logged to sheet`);
                 } catch (e) {
                   log("⚠️ שגיאה ברישום timeout לגוגל שיט: " + e.message);
                 }
@@ -1490,13 +1493,20 @@ let globalLogToSheet = null;
                   recordGroupFailure(cleanGroupName(groupName), groupUrl, errorReason);
                   
                   log("❌ מעבר לקבוצה הבאה אחרי כישלון");
-                  // תיעוד השגיאה לגוגל שיטס
-                  try {
-                    await logToSheet("Post failed", "Error", cleanGroupName(groupName), `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`, post.title || post.filename, errorReason);
-                    log("📊 שגיאה נרשמה לגוגל שיטס");
-                  } catch (e) {
-                    log("⚠️ שגיאה ברישום לגוגל שיט: " + e.message);
-                    await sendErrorMail("⚠️ שגיאה ברישום לגוגל שיט", `לא ניתן לרשום את התוצאה לגוגל שיט: ${e.message}`);
+                  log(`🔍 DEBUG: timeoutOccurred value: ${timeoutOccurred}, errorReason: ${errorReason}`);
+                  
+                  // תיעוד השגיאה לגוגל שיטס - רק אם לא היה timeout שכבר תיעד
+                  if (!timeoutOccurred || !errorReason.includes("timeout")) {
+                    log("🔍 DEBUG: Writing error to sheet (no timeout or different error)");
+                    try {
+                      await logToSheet("Post failed", "Error", cleanGroupName(groupName), `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`, post.title || post.filename, errorReason);
+                      log("📊 שגיאה נרשמה לגוגל שיטס");
+                    } catch (e) {
+                      log("⚠️ שגיאה ברישום לגוגל שיט: " + e.message);
+                      await sendErrorMail("⚠️ שגיאה ברישום לגוגל שיט", `לא ניתן לרשום את התוצאה לגוגל שיט: ${e.message}`);
+                    }
+                  } else {
+                    log("📊 Timeout כבר נרשם - מדלג על רישום נוסף");
                   }
                   // מייל שגיאה בוטל - יש רישום לגוגל שיטס ומנגנון 5 שגיאות ברצף
                 }

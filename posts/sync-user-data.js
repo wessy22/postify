@@ -37,18 +37,124 @@ function saveLogToFile() {
   }
 }
 
-function deleteFolderRecursive(folder) {
-  if (fs.existsSync(folder)) {
-    fs.readdirSync(folder).forEach(file => {
-      const curPath = path.join(folder, file);
-      if (fs.lstatSync(curPath).isDirectory()) {
-        deleteFolderRecursive(curPath);
-      } else {
-        fs.unlinkSync(curPath);
+// ========== פונקציות סינכרון חכם ==========
+function getRemoteFileSize(url) {
+  return new Promise((resolve, reject) => {
+    https.request(url, { method: 'HEAD' }, (response) => {
+      if (response.statusCode !== 200) {
+        return reject(new Error(`Status ${response.statusCode} for ${url}`));
       }
-    });
-    fs.rmdirSync(folder);
-  }
+      const contentLength = response.headers['content-length'];
+      resolve(contentLength ? parseInt(contentLength) : null);
+    }).on('error', reject).end();
+  });
+}
+
+function isFileIdentical(localPath, remoteUrl) {
+  return new Promise(async (resolve) => {
+    try {
+      if (!fs.existsSync(localPath)) {
+        return resolve(false);
+      }
+      
+      const localStats = fs.statSync(localPath);
+      const localSize = localStats.size;
+      
+      // אם הקובץ המקומי ריק או קטן מדי, הוא כנראה לא תקין
+      if (localSize < 100) {
+        logMessage('WARN', `קובץ מקומי קטן מדי (${localSize} bytes): ${path.basename(localPath)}`);
+        return resolve(false);
+      }
+      
+      const remoteSize = await getRemoteFileSize(remoteUrl);
+      if (remoteSize && Math.abs(localSize - remoteSize) <= 100) {
+        // הקבצים זהים בגודל (עם סובלנות של 100 bytes)
+        logMessage('INFO', `קובץ זהה נמצא, מדלג: ${path.basename(localPath)} (${localSize} bytes)`);
+        return resolve(true);
+      }
+      
+      logMessage('INFO', `קובץ שונה: ${path.basename(localPath)} - מקומי: ${localSize}B, מרוחק: ${remoteSize}B`);
+      return resolve(false);
+    } catch (error) {
+      logMessage('WARN', `שגיאה בבדיקת קובץ ${path.basename(localPath)}: ${error.message}`);
+      return resolve(false);
+    }
+  });
+}
+
+function smartSync(serverImages, localImageDir) {
+  return new Promise(async (resolve) => {
+    try {
+      // רשימת קבצים שצריך להוריד
+      const filesToDownload = [];
+      // רשימת קבצים קיימים שצריכים להישאר
+      const filesToKeep = [];
+      
+      logMessage('INFO', `מתחיל סינכרון חכם עבור ${serverImages.length} תמונות`);
+      
+      // בדיקת כל תמונה מהשרת
+      for (let i = 0; i < serverImages.length; i++) {
+        const imageUrl = serverImages[i];
+        let ext = path.extname(imageUrl).toLowerCase();
+        const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'];
+        let destName;
+        
+        if (imageExts.includes(ext) && ext) {
+          destName = `${i + 1}${ext}`;
+        } else if (ext) {
+          destName = `${i + 1}${ext}`;
+        } else {
+          destName = `${i + 1}.jpg`;
+        }
+        
+        const localPath = path.join(localImageDir, destName);
+        
+        // בדיקה אם הקובץ קיים וזהה
+        const isIdentical = await isFileIdentical(localPath, imageUrl);
+        if (isIdentical) {
+          filesToKeep.push(destName);
+        } else {
+          filesToDownload.push({ url: imageUrl, dest: localPath, name: destName });
+        }
+      }
+      
+      // מחיקת קבצים ישנים שלא רלוונטיים יותר
+      let filesToDelete = [];
+      if (fs.existsSync(localImageDir)) {
+        const existingFiles = fs.readdirSync(localImageDir);
+        const expectedFiles = serverImages.map((_, i) => {
+          let ext = path.extname(serverImages[i]).toLowerCase();
+          const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'];
+          if (imageExts.includes(ext) && ext) {
+            return `${i + 1}${ext}`;
+          } else if (ext) {
+            return `${i + 1}${ext}`;
+          } else {
+            return `${i + 1}.jpg`;
+          }
+        });
+        
+        filesToDelete = existingFiles.filter(file => !expectedFiles.includes(file));
+        for (const fileToDelete of filesToDelete) {
+          const filePath = path.join(localImageDir, fileToDelete);
+          try {
+            fs.unlinkSync(filePath);
+            logMessage('INFO', `מחק קובץ ישן: ${fileToDelete}`);
+          } catch (error) {
+            logMessage('WARN', `שגיאה במחיקת קובץ ישן ${fileToDelete}: ${error.message}`);
+          }
+        }
+      }
+      
+      logMessage('INFO', `סינכרון חכם: ${filesToKeep.length} קבצים נשמרו, ${filesToDownload.length} יורדו, ${filesToDelete.length} נמחקו`);
+      console.log(`🔄 סינכרון חכם: ${filesToKeep.length} נשמרו, ${filesToDownload.length} יורדו`);
+      
+      resolve({ filesToDownload, filesToKeep });
+    } catch (error) {
+      logMessage('ERROR', `שגיאה בסינכרון חכם: ${error.message}`);
+      resolve({ filesToDownload: [], filesToKeep: [] });
+    }
+  });
 }
 
 function downloadImage(url, dest) {
@@ -335,7 +441,7 @@ ${postsList}
     logMessage('INFO', `התחלת סינכרון נתונים עבור ${hostname}`);
     console.log(`🌐 Fetching post data for ${hostname}...`);
 
-    // ===== טעינת cache לפני מחיקת התיקייה =====
+    // ===== טעינת cache לפני התחלת הסינכרון =====
     let emailCache = { lastEmailDate: null, lastFailedPosts: [] };
     const cacheFile = getEmailCacheFilePath(userFolder);
     if (fs.existsSync(cacheFile)) {
@@ -350,14 +456,14 @@ ${postsList}
       console.log(`📋 לא נמצא cache קיים - זו הריצה הראשונה היום`);
     }
 
-    // מחיקה של כל התיקייה הקיימת לפני סנכרון
-    if (fs.existsSync(userFolder)) {
-      console.log("🧹 Cleaning user folder before sync...");
-      logMessage('INFO', 'מנקה תיקיית משתמש לפני סינכרון');
-      deleteFolderRecursive(userFolder);
-    }
+    // יצירת התיקיות הבסיסיות (ללא מחיקת קבצים קיימים)
+    fs.mkdirSync(userFolder, { recursive: true });
+    fs.mkdirSync(path.join(userFolder, "posts"), { recursive: true });
+    fs.mkdirSync(path.join(userFolder, "images"), { recursive: true });
+    logMessage('INFO', `תיקיות נוצרו/וודאו: ${userFolder}`);
+    console.log("📁 ודא שתיקיות קיימות (ללא מחיקה)...");
 
-        // ========== שליפת נתונים משולבים (פוסטים + הגדרות) ==========
+    // ========== שליפת נתונים משולבים (פוסטים + הגדרות) ==========
     logMessage('INFO', `שולף נתונים מ-API: ${apiUrl}`);
     const dataRes = await fetch(apiUrl);
     const data = await dataRes.json();
@@ -384,11 +490,8 @@ ${postsList}
         throw new Error('תבנית לא מוכרת של נתונים מהשרת');
     }
 
-
-
     // ודא שהתיקייה קיימת לפני יצירת קובץ הגדרות
-    fs.mkdirSync(userFolder, { recursive: true });
-    logMessage('INFO', `תיקיית משתמש נוצרה: ${userFolder}`);
+    logMessage('INFO', `תיקיית משתמש מוכנה: ${userFolder}`);
     
     // ========== יצירת קובץ הגדרות יומיות ==========
     console.log(`⚙️ יוצר קובץ daily-settings.json למשתמש...`);
@@ -402,11 +505,12 @@ ${postsList}
       logMessage('WARN', 'בעיה ביצירת קובץ הגדרות');
     }
 
-    // ========== יצירת תיקיות ועיבוד פוסטים ========== 
+    // ========== עיבוד פוסטים עם סינכרון חכם ========== 
     let totalPosts = posts.length;
     let totalImages = 0;
     let successfulImages = 0;
     let skippedImages = 0;
+    let keptImages = 0; // תמונות שנשמרו מהריצה הקודמת
     let postsWithFailures = []; // פוסטים שיש להם כשלונות בתמונות
     
     logMessage('INFO', `מתחיל עיבוד ${totalPosts} פוסטים`);
@@ -419,65 +523,65 @@ ${postsList}
         logMessage('INFO', `מעבד פוסט: ${post.title || post.post_title || post.name} (${post.images.length} תמונות)`);
         
         const postPath = path.join(userFolder, "posts", `${post.name}.json`);
-        fs.mkdirSync(path.dirname(postPath), { recursive: true });
-        
         const postImageDir = path.join(userFolder, "images", post.name);
         fs.mkdirSync(postImageDir, { recursive: true });
 
         totalImages += post.images.length;
 
-        for (let i = 0; i < post.images.length; i++) {
-          try {
-            let imageUrl = post.images[i];
-            if (!imageUrl.startsWith("http")) {
-              imageUrl = "https://postify.co.il/wp-content/postify-api/" + imageUrl.replace(/^\+|^\/+/, "");
-            }
+        // תיקון URL-ים של תמונות
+        const serverImages = post.images.map(imageUrl => {
+          if (!imageUrl.startsWith("http")) {
+            return "https://postify.co.il/wp-content/postify-api/" + imageUrl.replace(/^\+|^\/+/, "");
+          }
+          return imageUrl;
+        });
 
-            // קבע סיומת מקורית
-            let ext = path.extname(imageUrl).toLowerCase();
-            // רשימת סיומות תמונה נפוצות
-            const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'];
-            let isImage = imageExts.includes(ext);
-            let destName;
-            if (isImage && ext) {
-              // שמור את הסיומת המקורית (כולל GIF)
-              destName = `${i + 1}${ext}`;
-            } else if (ext) {
-              // קובץ לא תמונה אבל יש סיומת - שמור אותה
-              destName = `${i + 1}${ext}`;
-            } else {
-              // אין סיומת בכלל - תן ברירת מחדל jpg
-              destName = `${i + 1}.jpg`;
-            }
-            
-            const imageDest = path.join(postImageDir, destName);
-            
-            if (!fs.existsSync(imageDest)) {
-              console.log(`⬇️ Downloading: ${imageUrl}`);
-              await downloadImage(imageUrl, imageDest);
-              successfulImages++;
-            } else {
-              logMessage('INFO', `קובץ כבר קיים, דילוג: ${destName}`);
-              successfulImages++;
-            }
-            post.images[i] = imageDest; // עדכון הנתיב המקומי
-            
+        // סינכרון חכם - השוואה לתמונות קיימות
+        console.log(`🔍 מבצע סינכרון חכם עבור ${post.name}...`);
+        const { filesToDownload, filesToKeep } = await smartSync(serverImages, postImageDir);
+        
+        keptImages += filesToKeep.length;
+
+        // הורדת תמונות חדשות/שונות בלבד
+        for (const fileInfo of filesToDownload) {
+          try {
+            console.log(`⬇️ Downloading: ${fileInfo.url}`);
+            await downloadImage(fileInfo.url, fileInfo.dest);
+            successfulImages++;
           } catch (imageError) {
             logMessage('WARN', `דילוג על תמונה בפוסט ${post.title || post.post_title || post.name}: ${imageError.message}`);
-            // הסר את התמונה הבעייתית מהרשימה
-            post.images.splice(i, 1);
-            i--; // התאם את האינדקס
             skippedImages++;
-            postFailedImages++; // ספור כשלון לפוסט זה
-            continue; // המשך עם התמונה הבאה
+            postFailedImages++;
+            continue;
           }
         }
+
+        // עדכון נתיבי התמונות בפוסט
+        for (let i = 0; i < serverImages.length; i++) {
+          let ext = path.extname(serverImages[i]).toLowerCase();
+          const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'];
+          let destName;
+          
+          if (imageExts.includes(ext) && ext) {
+            destName = `${i + 1}${ext}`;
+          } else if (ext) {
+            destName = `${i + 1}${ext}`;
+          } else {
+            destName = `${i + 1}.jpg`;
+          }
+          
+          const imageDest = path.join(postImageDir, destName);
+          post.images[i] = imageDest; // עדכון הנתיב המקומי
+        }
+
+        // ספירת תמונות שהושלמו בהצלחה
+        successfulImages += filesToKeep.length;
 
         // אם יש כשלונות בפוסט זה, הוסף לרשימת הפוסטים עם בעיות
         if (postFailedImages > 0) {
           postsWithFailures.push({
             name: post.name,
-            title: post.title || post.post_title || post.name, // כותרת הפוסט או שם הקובץ כברירת מחדל
+            title: post.title || post.post_title || post.name,
             failedImages: postFailedImages,
             originalImageCount: postOriginalImageCount,
             successfulImages: postOriginalImageCount - postFailedImages
@@ -491,7 +595,6 @@ ${postsList}
         
       } catch (postError) {
         logMessage('ERROR', `שגיאה בעיבוד פוסט ${post.title || post.post_title || post.name}: ${postError.message}`);
-        // המשך עם הפוסט הבא
         continue;
       }
     }
@@ -499,7 +602,7 @@ ${postsList}
     // סיכום התהליך
     logMessage('INFO', `סינכרון הושלם בהצלחה`);
     logMessage('INFO', `פוסטים: ${totalPosts} סונכרנו`);
-    logMessage('INFO', `תמונות: ${successfulImages}/${totalImages} הורדו בהצלחה`);
+    logMessage('INFO', `תמונות: ${successfulImages}/${totalImages} הורדו/נשמרו בהצלחה (${keptImages} נשמרו מהריצה הקודמת)`);
     if (skippedImages > 0) {
       logMessage('WARN', `${skippedImages} תמונות דולגו בגלל שגיאות`);
     }
@@ -512,14 +615,15 @@ ${postsList}
       console.log(`✅ כל הפוסטים סונכרנו בהצלחה מלאה - אין צורך במייל התראה`);
     }
 
-    console.log(`\n🎉 Sync complete for ${hostname}!`);
+    console.log(`\n🎉 Smart sync complete for ${hostname}!`);
     console.log(`📁 נתונים נשמרו ב: ${userFolder}`);
     console.log(`📊 ${totalPosts} פוסטים סונכרנו`);
-    console.log(`🖼️ תמונות: ${successfulImages}/${totalImages} הורדו, ${skippedImages} דולגו`);
+    console.log(`🖼️ תמונות: ${successfulImages}/${totalImages} מוכנות (${keptImages} נשמרו, ${successfulImages - keptImages} הורדו חדש, ${skippedImages} דולגו)`);
     if (postsWithFailures.length > 0) {
       console.log(`⚠️ ${postsWithFailures.length} פוסטים עם בעיות - נשלח מייל ללקוח`);
     }
     console.log(`⚙️ הגדרות יומיות מוכנות לשימוש`);
+    console.log(`🚀 הסינכרון החכם חוסך זמן ולא מוריד מחדש קבצים זהים!`);
     
     // שמירת לוג לקובץ
     saveLogToFile();

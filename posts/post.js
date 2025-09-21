@@ -92,152 +92,13 @@ async function runWithTimeout(fn, ms = 12 * 60 * 1000) {
   ]).finally(() => clearTimeout(timeout));
 }
 
-// פונקציות גיבוי וטעינת קוקיז
-const BACKUP_DIR = path.join(__dirname, "session-backups");
-
-async function saveSessionData(page) {
-  try {
-    // יצירת תיקיית גיבוי אם לא קיימת
-    if (!fs.existsSync(BACKUP_DIR)) {
-      fs.mkdirSync(BACKUP_DIR, { recursive: true });
-    }
-
-    const cookies = await page.cookies();
-    const sessionData = await page.evaluate(() => {
-      try {
-        return {
-          localStorage: {...localStorage},
-          sessionStorage: {...sessionStorage},
-          currentUrl: location.href,
-          timestamp: Date.now()
-        };
-      } catch (e) {
-        return {
-          localStorage: {},
-          sessionStorage: {},
-          currentUrl: location.href,
-          timestamp: Date.now(),
-          error: e.message
-        };
-      }
-    });
-    
-    // שמירה לקבצים
-    const timestamp = new Date().toISOString().split('T')[0];
-    fs.writeFileSync(path.join(BACKUP_DIR, 'cookies.json'), 
-      JSON.stringify(cookies, null, 2));
-    fs.writeFileSync(path.join(BACKUP_DIR, 'session.json'), 
-      JSON.stringify(sessionData, null, 2));
-    fs.writeFileSync(path.join(BACKUP_DIR, `cookies_${timestamp}.json`), 
-      JSON.stringify(cookies, null, 2));
-    
-    console.log("✅ Session data backed up");
-    logToFile("✅ Session data backed up");
-  } catch (error) {
-    console.log(`⚠️ Failed to backup session: ${error.message}`);
-    logToFile(`⚠️ Failed to backup session: ${error.message}`);
-  }
-}
-
-async function loadSessionData(page) {
-  try {
-    const cookiesFile = path.join(BACKUP_DIR, 'cookies.json');
-    const sessionFile = path.join(BACKUP_DIR, 'session.json');
-    
-    if (fs.existsSync(cookiesFile)) {
-      const cookies = JSON.parse(fs.readFileSync(cookiesFile));
-      if (cookies.length > 0) {
-        await page.setCookie(...cookies);
-        console.log("✅ Cookies restored from backup");
-        logToFile("✅ Cookies restored from backup");
-      }
-    }
-    
-    if (fs.existsSync(sessionFile)) {
-      const sessionData = JSON.parse(fs.readFileSync(sessionFile));
-      if (sessionData.localStorage) {
-        await page.evaluate((data) => {
-          Object.keys(data.localStorage).forEach(key => {
-            try {
-              localStorage.setItem(key, data.localStorage[key]);
-            } catch (e) {
-              // סילוק שגיאות של localStorage
-            }
-          });
-        }, sessionData);
-        console.log("✅ Session data restored from backup");
-        logToFile("✅ Session data restored from backup");
-      }
-    }
-  } catch (error) {
-    console.log(`⚠️ Failed to load session: ${error.message}`);
-    logToFile(`⚠️ Failed to load session: ${error.message}`);
-  }
-}
-
-// סגירה עדינה במקום כיבוי גורף
-async function gracefulShutdown(browser, page, reason = "Normal shutdown") {
-  try {
-    console.log(`🔄 Starting graceful shutdown: ${reason}`);
-    logToFile(`🔄 Starting graceful shutdown: ${reason}`);
-    
-    // שמירת נתוני session
-    if (page && !page.isClosed()) {
-      await saveSessionData(page);
-      await page.close();
-    }
-    
-    // סגירת הדפדפן
-    if (browser) {
-      try {
-        await browser.close();
-        console.log("✅ Browser closed gracefully");
-        logToFile("✅ Browser closed gracefully");
-      } catch (browserError) {
-        console.log(`⚠️ Error closing browser: ${browserError.message}`);
-        logToFile(`⚠️ Error closing browser: ${browserError.message}`);
-      }
-    }
-    
-    // המתנה קצרה לוודא שהכל נסגר
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    // ניקוי המשתנים הגלובליים
-    globalBrowser = null;
-    globalPage = null;
-    
-  } catch (error) {
-    console.log(`⚠️ Error during graceful shutdown: ${error.message}`);
-    logToFile(`⚠️ Error during graceful shutdown: ${error.message}`);
-    // רק במקרה חירום - כיבוי בכוח
-    try {
-      console.log("🚨 Emergency force close...");
-      execSync('taskkill /F /IM chrome.exe /T', { stdio: 'ignore' });
-    } catch (e) {
-      // במקרה שגם זה נכשל
-    }
-  }
-}
-
-console.log("🔧 Initializing browser with session backup system...");
-
-// סגירה עדינה של תהליכים קיימים (אם יש)
+// סגירת כל תהליכי כרום/כרומיום לפני התחלת הסקריפט (Windows בלבד)
 try {
-  console.log("🔄 Checking for existing Chrome processes...");
-  const output = execSync('tasklist | findstr chrome.exe', { encoding: 'utf8', stdio: 'pipe' });
-  if (output.trim()) {
-    console.log("📋 Found existing Chrome processes - attempting graceful close...");
-    // ננסה סגירה עדינה תחילה - משתמשים ב-setTimeout רגיל במקום await
-    setTimeout(() => {
-      try {
-        execSync('taskkill /F /IM chrome.exe /T', { stdio: 'ignore' });
-      } catch (e) {
-        // אם זה נכשל, זה בסדר
-      }
-    }, 3000);
-  }
+  console.log("🔒 סוגר את כל תהליכי Chrome/Chromium...");
+  execSync('taskkill /F /IM chrome.exe /T', { stdio: 'ignore' });
+  execSync('taskkill /F /IM chromium.exe /T', { stdio: 'ignore' });
 } catch (e) {
-  // אין תהליכים פתוחים - זה בסדר
+  // יתכן ואין תהליך פתוח, מתעלמים משגיאה
 }
 
 // הוספת בדיקה לוודא שזה הקובץ הנכון
@@ -1344,28 +1205,8 @@ async function main() {
       ]
     });
 
-    // שימוש בטאב הראשון במקום ליצור טאב חדש
-    const pages = await browser.pages();
-    const page = pages.length > 0 ? pages[0] : await browser.newPage();
-    console.log(`🗂️ משתמש בטאב קיים (${pages.length} טאבים נמצאו)`);
-    
-    // סגירת טאבים נוספים אם יש
-    const allPages = await browser.pages();
-    if (allPages.length > 1) {
-      console.log(`🧹 סוגר ${allPages.length - 1} טאבים נוספים...`);
-      for (let i = 1; i < allPages.length; i++) {
-        await allPages[i].close();
-      }
-    }
-    
+    const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
-
-    // עדכון המשתנים הגלובליים לטיפול בsignals
-    globalBrowser = browser;
-    globalPage = page;
-
-    // טעינת נתוני session שמורים
-    await loadSessionData(page);
 
     console.log("📍 Navigating to group page...");
     logToFile(`📍 Navigating to: ${groupUrl}`);
@@ -1726,9 +1567,6 @@ if (!composerFound) {
     logToFile("✅ Post published successfully");
     postSuccessful = true; // ★ סימון שהפרסום הצליח
     
-    // שמירת session אחרי פרסום מוצלח
-    await saveSessionData(page);
-    
     // איפוס מונה כשלונות רצופים בהצלחה
     resetConsecutiveFailures();
     
@@ -1769,8 +1607,8 @@ if (!composerFound) {
 
     console.log("🔍 DEBUG: About to close browser...");
     try {
-      await gracefulShutdown(browser, page, "Successful completion");
-      console.log("🎉 Browser closed gracefully after successful post");
+      await browser.close();
+      console.log("🎉 Browser closed successfully");
     } catch (closeError) {
       console.log("⚠️ Warning: Could not close browser properly:", closeError.message);
       // זה לא אמור לפסול את כל הפרסום
@@ -1797,7 +1635,7 @@ if (!composerFound) {
     logToFile(`❌ Post publishing failed: ${err.message}`);
     
     // הרישום לגוגל שיטס מטופל על ידי run-day.js כדי למנוע כפילות
-    if (browser) await gracefulShutdown(browser, globalPage, `Error: ${err.message}`);
+    if (browser) await browser.close();
 
     // שליחת מייל מטופלת על ידי run-day.js כדי למנוע כפילות
     
@@ -1843,35 +1681,6 @@ async function runOnce() {
     process.exit(1);
   }
 }
-
-// משתנים גלובליים לניהול graceful shutdown
-let globalBrowser = null;
-let globalPage = null;
-
-// הוספת signal handlers לsigterm/sigint
-process.on('SIGINT', async () => {
-  console.log('\n🔄 Received SIGINT - performing graceful shutdown...');
-  if (globalBrowser && globalPage) {
-    await gracefulShutdown(globalBrowser, globalPage, 'SIGINT received');
-  }
-  process.exit(0);
-});
-
-process.on('SIGTERM', async () => {
-  console.log('\n🔄 Received SIGTERM - performing graceful shutdown...');
-  if (globalBrowser && globalPage) {
-    await gracefulShutdown(globalBrowser, globalPage, 'SIGTERM received');
-  }
-  process.exit(0);
-});
-
-process.on('uncaughtException', async (error) => {
-  console.error('🚨 Uncaught exception:', error.message);
-  if (globalBrowser && globalPage) {
-    await gracefulShutdown(globalBrowser, globalPage, `Uncaught exception: ${error.message}`);
-  }
-  process.exit(1);
-});
 
 // הפעל את הריטריי במקום ה־IIFE - בניסיון ראשון מותר לתעד, בניסיונות חוזרים לא
 // הפעלה חד-פעמית בלבד, ללא ריטריי

@@ -1102,37 +1102,6 @@ const triggerLinkRecognition = async (page, textbox) => {
   }
 };
 
-// פונקציה ליצירת וריאציה בטקסט - הוספת רווח אקראי אחרי מילה
-function createTextVariation(originalText) {
-  if (!originalText || originalText.length < 10) {
-    return originalText; // אם הטקסט קצר מדי, אל תשנה
-  }
-
-  let text = originalText;
-  
-  // פיצול לפי רווחים כדי למצוא מילים
-  const words = text.split(' ');
-  
-  // אם יש פחות מ-3 מילים, אל תשנה
-  if (words.length < 3) {
-    return originalText;
-  }
-
-  // בחר מילה אקראית (לא הראשונה והלא האחרונה כדי לא לפגוע בעיצוב)
-  const randomWordIndex = Math.floor(Math.random() * (words.length - 2)) + 1;
-  
-  // הוסף רווח נוסף אחרי המילה הנבחרת
-  words[randomWordIndex] = words[randomWordIndex] + ' ';
-  
-  // חבר הכל בחזרה
-  text = words.join(' ');
-  
-  console.log(`🎲 וריאציית טקסט: נוסף רווח נוסף אחרי המילה "${words[randomWordIndex].trim()}" (מיקום ${randomWordIndex + 1})`);
-  console.log(`📏 אורך מקורי: ${originalText.length} -> אורך חדש: ${text.length}`);
-
-  return text;
-}
-
 const humanType = async (element, text, page) => {
   // נקה רווחים מיותרים ושורות ריקות
   let cleanText = text
@@ -1450,14 +1419,10 @@ if (!composerFound) {
     console.log("📝 Typing post text...");
     console.log("🔍 Original post text length:", postText.length);
     console.log("🔍 Original post text (first 200 chars):", JSON.stringify(postText.substring(0, 200)));
-    
-    // יצירת וריאציה של הטקסט לפני הכתיבה
-    const variedPostText = createTextVariation(postText);
-    
     await page.waitForSelector('div[role="dialog"] div[role="textbox"]', { timeout: 40000 });
     const textbox = await page.$('div[role="dialog"] div[role="textbox"]');
     await textbox.click();
-    await humanType(textbox, variedPostText, page);
+    await humanType(textbox, postText, page);
 
     // המתן לפייסבוק לעבד את הקישורים ולזהות אותם
     console.log("🔗 Waiting for Facebook to process links...");

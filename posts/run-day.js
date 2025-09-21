@@ -144,15 +144,14 @@ function updateDelay(newDelay) {
 // ========== מערכת מעקב כשלונות רצופים ==========
 
 // פונקציה לרישום כשלון קבוצה
-function recordGroupFailure(groupName, groupUrl, errorMessage) {
-    // בדיקה אם הקבוצה כבר נרשמה בכשלונות הרצופים (לפי URL)
-    const isAlreadyFailed = consecutiveFailures.some(f => f.groupUrl === groupUrl);
+function recordGroupFailure(groupName, errorMessage) {
+    // בדיקה אם הקבוצה כבר נרשמה בכשלונות הרצופים
+    const isAlreadyFailed = consecutiveFailures.some(f => f.groupName === groupName);
     
     if (!isAlreadyFailed) {
         const now = new Date();
         const failure = {
             groupName: groupName,
-            groupUrl: groupUrl,
             timestamp: now.toISOString(),
             timeStr: now.toLocaleTimeString('he-IL', { timeZone: 'Asia/Jerusalem' }),
             errorMessage: errorMessage
@@ -165,9 +164,9 @@ function recordGroupFailure(groupName, groupUrl, errorMessage) {
             consecutiveFailures.shift();
         }
         
-        console.log(`❌ רישום כשלון קבוצה: ${groupName} (URL: ${groupUrl}) (סה"כ כשלונות רצופים: ${consecutiveFailures.length})`);
+        console.log(`❌ רישום כשלון קבוצה: ${groupName} (סה"כ כשלונות רצופים: ${consecutiveFailures.length})`);
         
-        // בדיקה אם יש 5 כשלונות רצופים של קבוצות שונות
+        // בדיקה אם יש 3 כשלונות רצופים של קבוצות שונות
         checkConsecutiveFailures();
     } else {
         console.log(`🔄 קבוצה ${groupName} כבר רשומה בכשלונות הרצופים - דילוג על רישום נוסף`);
@@ -186,13 +185,13 @@ function resetConsecutiveFailures() {
 function checkConsecutiveFailures() {
     console.log(`🔍 בדיקת כשלונות: ${consecutiveFailures.length} קבוצות שונות נכשלו ברצף`);
     
-    if (consecutiveFailures.length >= 5) {
-        console.log(`📋 קבוצות שנכשלו: ${consecutiveFailures.map(f => f.groupName).join(', ')}`);
-        console.log("🚨 זוהו 5+ קבוצות שונות ברצף - שולח התראה!");
+    if (consecutiveFailures.length >= 3) {
+        console.log(`� קבוצות שנכשלו: ${consecutiveFailures.map(f => f.groupName).join(', ')}`);
+        console.log("🚨 זוהו 3+ קבוצות שונות ברצף - שולח התראה!");
         
-        // שלח את 5 הכשלונות הראשונים (כל אחד מקבוצה שונה)
-        const firstFiveFailures = consecutiveFailures.slice(0, 5);
-        sendUrgentFailureAlert(firstFiveFailures);
+        // שלח את 3 הכשלונות הראשונים (כל אחד מקבוצה שונה)
+        const firstThreeFailures = consecutiveFailures.slice(0, 3);
+        sendUrgentFailureAlert(firstThreeFailures);
     } else {
         console.log("✅ לא מספיק קבוצות שונות לשליחת התראה");
     }
@@ -202,7 +201,7 @@ function checkConsecutiveFailures() {
 async function sendUrgentFailureAlert(failures) {
     try {
         // הודעה דחופה לקונסול
-        console.log("🚨🚨🚨 התראה דחופה - זוהו 5 כשלונות קבוצות שונות ברצף! 🚨🚨🚨");
+        console.log("🚨🚨🚨 התראה דחופה - זוהו 3 כשלונות קבוצות שונות ברצף! 🚨🚨🚨");
         console.log("📧 שולח מייל התראה דחוף...");
         
         // קריאת hostname מקובץ instance-name.txt
@@ -223,13 +222,13 @@ async function sendUrgentFailureAlert(failures) {
             `${index + 1}. ${f.groupName} (${f.timeStr}): ${f.errorMessage}`
         ).join('\n');
         
-        const subject = `🚨 התראה דחופה - 5 כשלונות קבוצות ברצף! [${hostname}]`;
+        const subject = `🚨 התראה דחופה - 3 כשלונות קבוצות ברצף! [${hostname}]`;
         
         const textMessage = `
 🚨 התראה דחופה מ-Postify!
 
 🖥️ שרת: ${hostname}
-זוהו 5 כשלונות של קבוצות שונות ברצף:
+זוהו 3 כשלונות של קבוצות שונות ברצף:
 
 ${failureList}
 
@@ -250,7 +249,7 @@ Postify - מערכת ניטור אוטומטית
     </div>
     
     <div style="background-color:#ffffff;padding:15px;border-radius:5px;margin:15px 0;">
-      <h3 style="color:#d32f2f;">זוהו 5 כשלונות של קבוצות שונות ברצף:</h3>
+      <h3 style="color:#d32f2f;">זוהו 3 כשלונות של קבוצות שונות ברצף:</h3>
       <ol style="line-height:1.8;">
         ${failures.map(f => 
           `<li><b>${f.groupName}</b> (${f.timeStr}): ${f.errorMessage}</li>`
@@ -278,7 +277,7 @@ Postify - מערכת ניטור אוטומטית
         `.trim();
         
         await sendMail(subject, textMessage, htmlMessage);
-        console.log("🚨 התראה דחופה נשלחה - 5 כשלונות קבוצות ברצף!");
+        console.log("🚨 התראה דחופה נשלחה - 3 כשלונות קבוצות ברצף!");
         
     } catch (error) {
         console.log("❌ שגיאה בשליחת התראה דחופה:", error.message);
@@ -1151,7 +1150,7 @@ function updateHeartbeat({ group, postFile, status, index }) {
         
         // הודעה על מערכת מעקב כשלונות רצופים
         if (pi === startPost) {
-          log("🔍 מערכת מעקב כשלונות רצופים פעילה - התראה דחופה תישלח אחרי 5 כשלונות קבוצות שונות ברצף");
+          log("🔍 מערכת מעקב כשלונות רצופים פעילה - התראה דחופה תישלח אחרי 3 כשלונות קבוצות שונות ברצף");
         }
         
         // בדיקת עצירה לפי שעה בכל פוסט
@@ -1191,7 +1190,7 @@ function updateHeartbeat({ group, postFile, status, index }) {
           let retryCount = 0;
           let success = false;
 
-          while (retryCount < 1 && !success) {
+          while (retryCount < 2 && !success) {
             await new Promise((resolve) => {
               // --- Heartbeat (ניטור) - בטוח ---
               try {
@@ -1225,29 +1224,31 @@ function updateHeartbeat({ group, postFile, status, index }) {
 
               // העברת פרמטר retry כדי שpost.js לא יתעד בניסיונות ביניים
               const isRetry = retryCount > 0;
-              const isLastAttempt = true; // תמיד הניסיון האחרון (1/1)
+              const isLastAttempt = retryCount >= 1; // האם זה הניסיון האחרון (2/2)
               const groupPostIdentifier = `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`;
-              const retryParam = "--first"; // תמיד הניסיון הראשון והאחרון
-              const lastAttemptParam = "--last"; // תמיד הניסיון האחרון
+              const retryParam = isRetry ? "--retry" : "--first";
+              const lastAttemptParam = isLastAttempt ? "--last" : "--not-last";
               const child = spawn("node", ["post.js", groupUrl, post.filename, retryParam, groupPostIdentifier, lastAttemptParam], { stdio: "inherit" });
 
               // --- Timeout ---
-              const TIMEOUT = 6 * 60 * 1000;
-              let mailSent = false; // דגל למנוע שליחת מייל כפולה
+              const TIMEOUT = 15 * 60 * 1000;
               let timeoutId = setTimeout(async () => {
-                log(`⏰ Timeout! post.js לקח יותר מ־6 דקות. סוגר תהליך וממשיך...`);
+                log(`⏰ Timeout! post.js לקח יותר מ־15 דקות. סוגר תהליך וממשיך...`);
                 child.kill("SIGKILL");
                 
-                // תיעוד timeout לגוגל שיטס (תמיד הניסיון הסופי)
-                try {
-                  const groupName = fs.readFileSync(CURRENT_GROUP_NAME_FILE, "utf-8").trim();
-                  await logToSheet("Post failed", "Error", cleanGroupName(groupName), `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`, post.title || post.filename, "הפרסום נתקע (timeout) ונעצר אוטומטית");
-                  log("📊 Timeout נרשם לגוגל שיטס");
-                } catch (e) {
-                  log("⚠️ שגיאה ברישום timeout לגוגל שיט: " + e.message);
+                // תיעוד timeout לגוגל שיטס אם זה הניסיון הסופי
+                if (retryCount >= 1) { // הניסיון הסופי
+                  try {
+                    const groupName = fs.readFileSync(CURRENT_GROUP_NAME_FILE, "utf-8").trim();
+                    await logToSheet("Post failed", "Error", cleanGroupName(groupName), `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`, post.title || post.filename, "הפרסום נתקע (timeout) ונעצר אוטומטית");
+                    log("📊 Timeout נרשם לגוגל שיטס");
+                  } catch (e) {
+                    log("⚠️ שגיאה ברישום timeout לגוגל שיט: " + e.message);
+                  }
                 }
                 
-                // מייל timeout בוטל - יש רישום לגוגל שיטס ומנגנון 5 שגיאות ברצף
+                // שליחת מייל רק עבור timeout
+                sendErrorMail("⏰ Timeout - קבוצה נתקעה", `הקבוצה ${groupUrl} נתקעה ליותר מ־15 דקות ונעצרה אוטומטית.`);
               }, TIMEOUT);
 
               // --- עדכון state ---
@@ -1349,34 +1350,45 @@ function updateHeartbeat({ group, postFile, status, index }) {
                   log(`❌ שגיאה בפרסום לקבוצה ${groupName}: ${errorReason}`);
                   
                   // רישום כשלון קבוצה למערכת המעקב
-                  recordGroupFailure(cleanGroupName(groupName), groupUrl, errorReason);
+                  recordGroupFailure(cleanGroupName(groupName), errorReason);
                   
-                  log("❌ מעבר לקבוצה הבאה אחרי כישלון");
-                  // תיעוד השגיאה לגוגל שיטס
-                  try {
-                    await logToSheet("Post failed", "Error", cleanGroupName(groupName), `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`, post.title || post.filename, errorReason);
-                    log("📊 שגיאה נרשמה לגוגל שיטס");
-                  } catch (e) {
-                    log("⚠️ שגיאה ברישום לגוגל שיט: " + e.message);
-                    await sendErrorMail("⚠️ שגיאה ברישום לגוגל שיט", `לא ניתן לרשום את התוצאה לגוגל שיט: ${e.message}`);
+                  if (retryCount < 2) { // שינוי: retryCount < 2 כי כבר העלינו אותו
+                    log("🔁 מנסה שוב לפרסם לקבוצה...");
+                  } else {
+                    log("❌ מעבר לקבוצה הבאה אחרי כישלון סופי");
+                    // תיעוד השגיאה לגוגל שיטס בניסיון הסופי
+                    try {
+                      await logToSheet("Post failed", "Error", cleanGroupName(groupName), `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`, post.title || post.filename, errorReason);
+                      log("📊 שגיאה נרשמה לגוגל שיטס");
+                    } catch (e) {
+                      log("⚠️ שגיאה ברישום לגוגל שיט: " + e.message);
+                      await sendErrorMail("⚠️ שגיאה ברישום לגוגל שיט", `לא ניתן לרשום את התוצאה לגוגל שיט: ${e.message}`);
+                    }
+                    // שליחת מייל שגיאה
+                    try {
+                      await sendErrorMail("❌ שגיאה בפרסום פוסט", `הפרסום נכשל בקבוצה ${groupName}. סיבה: ${errorReason}`);
+                    } catch (e) {
+                      log("⚠️ שגיאה בשליחת מייל שגיאה: " + e.message);
+                    }
                   }
-                  // מייל שגיאה בוטל - יש רישום לגוגל שיטס ומנגנון 5 שגיאות ברצף
                 }
 
                 // העלאת הcounter לפני ההשהיה
                 retryCount++;
 
-                // --- השהייה רנדומלית מה-config (רק בין קבוצות) ---
+                // --- השהייה רנדומלית מה-config (רק בין קבוצות, לא בין ניסיונות retry) ---
                 if (!skipDelay && success) { // רק אם הפרסום הצליח (ועוברים לקבוצה הבאה)
                   const delaySec = config.minDelaySec + Math.floor(Math.random() * (config.maxDelaySec - config.minDelaySec + 1));
                   const minutes = Math.floor(delaySec / 60);
                   const seconds = delaySec % 60;
                   log(`⏱ ממתין ${minutes} דקות ו־${seconds} שניות לפני הקבוצה הבאה...`);
                   await countdown(delaySec);
+                } else if (!success && retryCount < 2) {
+                  log(`⚡ דילוג על השהייה (ניסיון חוזר)`);
                 } else if (skipDelay) {
                   log(`⚡ דילוג על השהייה (--now)`);
                 } else if (!success) {
-                  log(`⚡ דילוג על השהייה (כישלון)`);
+                  log(`⚡ דילוג על השהייה (כישלון סופי)`);
                 }
 
                 resolve();
@@ -1390,19 +1402,27 @@ function updateHeartbeat({ group, postFile, status, index }) {
                 // עדכון heartbeat בשגיאה
                 updateHeartbeat({ group: groupUrl, postFile: post.filename, status: 'error', index: gi });
 
-                log("⏭️ מדלג לקבוצה הבאה אחרי שגיאת תהליך...");
-                
-                // תיעוד שגיאת תהליך לגוגל שיטס
-                try {
-                  const groupName = fs.readFileSync(CURRENT_GROUP_NAME_FILE, "utf-8").trim();
-                  await logToSheet("Post failed", "Error", cleanGroupName(groupName), `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`, post.title || post.filename, `שגיאה בהרצת post.js: ${error.message}`);
-                  log("📊 שגיאת תהליך נרשמה לגוגל שיטס");
-                } catch (e) {
-                  log("⚠️ שגיאה ברישום שגיאת תהליך לגוגל שיט: " + e.message);
+                if (retryCount < 2) { // שינוי: retryCount < 2 כי כבר העלינו אותו
+                  log("🔁 מנסה שוב לפרסם לקבוצה...");
+                } else {
+                  log("⏭️ מדלג לקבוצה הבאה אחרי שגיאת תהליך...");
+                  
+                  // תיעוד שגיאת תהליך לגוגל שיטס בניסיון הסופי
+                  try {
+                    const groupName = fs.readFileSync(CURRENT_GROUP_NAME_FILE, "utf-8").trim();
+                    await logToSheet("Post failed", "Error", cleanGroupName(groupName), `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`, post.title || post.filename, `שגיאה בהרצת post.js: ${error.message}`);
+                    log("📊 שגיאת תהליך נרשמה לגוגל שיטס");
+                  } catch (e) {
+                    log("⚠️ שגיאה ברישום שגיאת תהליך לגוגל שיט: " + e.message);
+                  }
+                  
+                  // שליחת מייל שגיאה
+                  try {
+                    await sendErrorMail("❌ שגיאה בהרצת post.js", `שגיאה בהרצת post.js: ${error.message}`);
+                  } catch (e) {
+                    log("⚠️ שגיאה בשליחת מייל שגיאה: " + e.message);
+                  }
                 }
-                
-                // מייל שגיאה בוטל - יש רישום לגוגל שיטס ומנגנון 5 שגיאות ברצף
-                
                 resolve();
               });
             });

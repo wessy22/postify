@@ -7,65 +7,7 @@ const { sendErrorMail, sendMail } = require("./mailer");
 // קבוע לקובץ מצבי רוטציה
 const ROTATION_STATE_FILE = path.join(__dirname, "rotation-states.json");
 
-// ========== פונקציות ניהול Session (תואמות ל-post.js) ==========
-const BACKUP_DIR = path.join(__dirname, "session-backups");
-
-// וידוא שתיקיית הגיבוי קיימת
-if (!fs.existsSync(BACKUP_DIR)) {
-    fs.mkdirSync(BACKUP_DIR, { recursive: true });
-    console.log(`📁 Created session backup directory: ${BACKUP_DIR}`);
-}
-
-// פונקציה לבדיקת תקינות קבצי הגיבוי
-function validateSessionBackup() {
-    try {
-        const cookiesFile = path.join(BACKUP_DIR, 'cookies.json');
-        const sessionFile = path.join(BACKUP_DIR, 'session.json');
-        
-        if (fs.existsSync(cookiesFile) && fs.existsSync(sessionFile)) {
-            const cookies = JSON.parse(fs.readFileSync(cookiesFile));
-            const session = JSON.parse(fs.readFileSync(sessionFile));
-            
-            const isValid = Array.isArray(cookies) && typeof session === 'object' && session.timestamp;
-            const age = Date.now() - (session.timestamp || 0);
-            const maxAge = 24 * 60 * 60 * 1000; // 24 שעות
-            
-            if (isValid && age < maxAge) {
-                console.log(`✅ Session backup is valid (age: ${Math.round(age / (60 * 60 * 1000))}h)`);
-                return true;
-            } else {
-                console.log(`⚠️ Session backup is old or invalid (age: ${Math.round(age / (60 * 60 * 1000))}h)`);
-                return false;
-            }
-        }
-        return false;
-    } catch (error) {
-        console.log(`⚠️ Session backup validation failed: ${error.message}`);
-        return false;
-    }
-}
-
-// פונקציה לניקוי גיבויים ישנים
-function cleanOldBackups() {
-    try {
-        const files = fs.readdirSync(BACKUP_DIR);
-        const now = Date.now();
-        const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 ימים
-        
-        files.forEach(file => {
-            const filePath = path.join(BACKUP_DIR, file);
-            const stats = fs.statSync(filePath);
-            if (now - stats.mtime.getTime() > maxAge && file.includes('cookies_')) {
-                fs.unlinkSync(filePath);
-                console.log(`🗑️ Cleaned old backup: ${file}`);
-            }
-        });
-    } catch (error) {
-        console.log(`⚠️ Failed to clean old backups: ${error.message}`);
-    }
-}
-
-console.log("🔧 RUN-DAY initialized with enhanced session management");
+console.log("🔧 RUN-DAY initialized");
 
 // ================================================================
 // RUNDAY - מערכת תזמון פוסטים משודרגת עם מניעת כפילויות תאריכים
@@ -1220,17 +1162,6 @@ let globalLogToSheet = null;
 
     // ============ לולאת פרסום חדשה עם resume, heartbeat וללא דוח יומי ============
     async function runPostsForToday(postsToday, isSpecificPost = false) {
-      // ניקוי session backups ישנים בתחילת היום
-      log("🧹 Cleaning old session backups...");
-      cleanOldBackups();
-      
-      // בדיקת תקינות session backup נוכחי
-      const sessionValid = validateSessionBackup();
-      if (sessionValid) {
-        log("✅ Current session backup is valid");
-      } else {
-        log("⚠️ No valid session backup found - browser will need fresh login");
-      }
 
       if (postsToday.length === 0) {
         log("✅ אין פוסטים מתאימים להיום.");
@@ -1340,12 +1271,6 @@ let globalLogToSheet = null;
                 console.log("⚠️ לא ניתן לכתוב heartbeat:", e.message);
               }
 
-              // וידוא שהsession backup תקין לפני הפעלת post.js
-              const sessionValid = validateSessionBackup();
-              if (!sessionValid) {
-                log("⚠️ Session backup not valid - post.js will need to re-login");
-              }
-
               // העברת פרמטר retry כדי שpost.js לא יתעד בניסיונות ביניים
               const isRetry = retryCount > 0;
               const isLastAttempt = true; // תמיד הניסיון האחרון (1/1)
@@ -1353,10 +1278,9 @@ let globalLogToSheet = null;
               const retryParam = "--first"; // תמיד הניסיון הראשון והאחרון
               const lastAttemptParam = "--last"; // תמיד הניסיון האחרון
               
-              log(`🚀 Starting post.js with session backup support...`);
+              log(`🚀 Starting post.js...`);
               const child = spawn("node", ["post.js", groupUrl, post.filename, retryParam, groupPostIdentifier, lastAttemptParam], { 
-                stdio: "inherit",
-                env: { ...process.env, POST_SESSION_BACKUP: 'enabled' }
+                stdio: "inherit"
               });
 
               // --- Graceful Timeout ---
@@ -2267,12 +2191,6 @@ process.on('SIGINT', async () => {
   if (globalLog) globalLog('🔄 RUN-DAY: Graceful shutdown initiated by SIGINT');
   
   try {
-    // שמירת session backup אחרונה אם יש תהליך פעיל
-    const sessionValid = validateSessionBackup();
-    if (sessionValid && globalLog) {
-      globalLog('✅ Session backup is valid for next run');
-    }
-    
     // רישום כיבוי לגיוגל שיטס
     if (globalLogToSheet) {
       try {
@@ -2298,12 +2216,6 @@ process.on('SIGTERM', async () => {
   if (globalLog) globalLog('🔄 RUN-DAY: Graceful shutdown initiated by SIGTERM');
   
   try {
-    // שמירת session backup אחרונה
-    const sessionValid = validateSessionBackup();
-    if (sessionValid && globalLog) {
-      globalLog('✅ Session backup is valid for next run');
-    }
-    
     // רישום כיבוי לגיוגל שיטס
     if (globalLogToSheet) {
       try {
@@ -2346,4 +2258,4 @@ process.on('uncaughtException', async (error) => {
   process.exit(1);
 });
 
-console.log("🎯 RUN-DAY initialized with enhanced session management and graceful shutdown");
+console.log("🎯 RUN-DAY initialized");

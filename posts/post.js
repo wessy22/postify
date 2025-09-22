@@ -1,10 +1,14 @@
 const { sendErrorMail } = require("./mailer");
 const puppeteer = require("puppeteer-core");
-const { execSync } = require("child_process");
+const { execSync, exec } = require("child_process");
+const { promisify } = require('util');
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const config = require("./config.json");
+
+// יצירת execAsync פעם אחת לכל הקובץ
+const execAsync = promisify(exec);
 
 // מונה כשלונות רצופים - מתאפס בהצלחה
 let consecutiveFailures = 0;
@@ -92,88 +96,20 @@ async function runWithTimeout(fn, ms = 12 * 60 * 1000) {
   ]).finally(() => clearTimeout(timeout));
 }
 
-// פונקציות גיבוי וטעינת קוקיז
-const BACKUP_DIR = path.join(__dirname, "session-backups");
-
-async function saveSessionData(page) {
-  try {
-    // יצירת תיקיית גיבוי אם לא קיימת
-    if (!fs.existsSync(BACKUP_DIR)) {
-      fs.mkdirSync(BACKUP_DIR, { recursive: true });
-    }
-
-    const cookies = await page.cookies();
-    const sessionData = await page.evaluate(() => {
-      try {
-        return {
-          localStorage: {...localStorage},
-          sessionStorage: {...sessionStorage},
-          currentUrl: location.href,
-          timestamp: Date.now()
-        };
-      } catch (e) {
-        return {
-          localStorage: {},
-          sessionStorage: {},
-          currentUrl: location.href,
-          timestamp: Date.now(),
-          error: e.message
-        };
-      }
-    });
-    
-    // שמירה לקבצים
-    const timestamp = new Date().toISOString().split('T')[0];
-    fs.writeFileSync(path.join(BACKUP_DIR, 'cookies.json'), 
-      JSON.stringify(cookies, null, 2));
-    fs.writeFileSync(path.join(BACKUP_DIR, 'session.json'), 
-      JSON.stringify(sessionData, null, 2));
-    fs.writeFileSync(path.join(BACKUP_DIR, `cookies_${timestamp}.json`), 
-      JSON.stringify(cookies, null, 2));
-    
-    console.log("✅ Session data backed up");
-    logToFile("✅ Session data backed up");
-  } catch (error) {
-    console.log(`⚠️ Failed to backup session: ${error.message}`);
-    logToFile(`⚠️ Failed to backup session: ${error.message}`);
-  }
+// סגירת כל תהליכי כרום/כרומיום לפני התחלת הסקריפט (Windows בלבד)
+try {
+  console.log("� סוגר את כל תהליכי Chrome/Chromium...");
+  execSync('taskkill /F /IM chrome.exe /T', { stdio: 'ignore' });
+  execSync('taskkill /F /IM chromium.exe /T', { stdio: 'ignore' });
+} catch (e) {
+  // יתכן ואין תהליך פתוח, מתעלמים משגיאה
 }
 
-async function loadSessionData(page) {
-  try {
-    const cookiesFile = path.join(BACKUP_DIR, 'cookies.json');
-    const sessionFile = path.join(BACKUP_DIR, 'session.json');
-    
-    if (fs.existsSync(cookiesFile)) {
-      const cookies = JSON.parse(fs.readFileSync(cookiesFile));
-      if (cookies.length > 0) {
-        await page.setCookie(...cookies);
-        console.log("✅ Cookies restored from backup");
-        logToFile("✅ Cookies restored from backup");
-      }
-    }
-    
-    if (fs.existsSync(sessionFile)) {
-      const sessionData = JSON.parse(fs.readFileSync(sessionFile));
-      if (sessionData.localStorage) {
-        await page.evaluate((data) => {
-          Object.keys(data.localStorage).forEach(key => {
-            try {
-              localStorage.setItem(key, data.localStorage[key]);
-            } catch (e) {
-              // סילוק שגיאות של localStorage
-            }
-          });
-        }, sessionData);
-        console.log("✅ Session data restored from backup");
-        logToFile("✅ Session data restored from backup");
-      }
-    }
-  } catch (error) {
-    console.log(`⚠️ Failed to load session: ${error.message}`);
-    logToFile(`⚠️ Failed to load session: ${error.message}`);
-  }
-}
+// הוספת בדיקה לוודא שזה הקובץ הנכון
+console.log("🔍 RUNNING POST.JS VERSION WITH ENHANCED SUCCESS DETECTION - v2.0");
+console.log("🔍 File path:", __filename);
+console.log("🔍 Current time:", new Date().toISOString());
+logToFile("🔍 POST.JS STARTED - v2.0");
 
 // סגירה עדינה במקום כיבוי גורף
 async function gracefulShutdown(browser, page, reason = "Normal shutdown") {
@@ -220,25 +156,6 @@ async function gracefulShutdown(browser, page, reason = "Normal shutdown") {
 }
 
 console.log("🔧 Initializing browser with session backup system...");
-
-// סגירה עדינה של תהליכים קיימים (אם יש)
-try {
-  console.log("🔄 Checking for existing Chrome processes...");
-  const output = execSync('tasklist | findstr chrome.exe', { encoding: 'utf8', stdio: 'pipe' });
-  if (output.trim()) {
-    console.log("📋 Found existing Chrome processes - attempting graceful close...");
-    // ננסה סגירה עדינה תחילה - משתמשים ב-setTimeout רגיל במקום await
-    setTimeout(() => {
-      try {
-        execSync('taskkill /F /IM chrome.exe /T', { stdio: 'ignore' });
-      } catch (e) {
-        // אם זה נכשל, זה בסדר
-      }
-    }, 3000);
-  }
-} catch (e) {
-  // אין תהליכים פתוחים - זה בסדר
-}
 
 // הוספת בדיקה לוודא שזה הקובץ הנכון
 console.log("🔍 RUNNING POST.JS VERSION WITH ENHANCED SUCCESS DETECTION - v2.0");
@@ -1323,6 +1240,32 @@ const humanType = async (element, text, page) => {
   }
 };
 
+// פונקציה לחיפוש Composer
+async function findComposer(page) {
+  for (let scrollTry = 0; scrollTry < 10; scrollTry++) {
+    const buttons = await page.$$('div[role="button"]');
+    for (let button of buttons) {
+      const text = await page.evaluate(el => el.textContent, button);
+      if (
+        text.includes("כאן כותבים") ||
+        text.includes("Write something")
+      ) {
+        await button.click();
+        return true;
+      }
+    }
+    // גלילה איטית למטה במקום גלילה אחת של 800 פיקסלים
+    for (let i = 0; i < 8; i++) {
+      await page.evaluate(() => window.scrollBy(0, 100));
+      await new Promise(r => setTimeout(r, 400)); // 0.4 שניות בין כל גלילה
+    }
+    await new Promise(r => setTimeout(r, 10000)); // 10 שניות השהיה
+    await page.reload({ waitUntil: "networkidle2" });
+    await new Promise(r => setTimeout(r, 2000));
+  }
+  return false;
+}
+
 async function main() {
   let browser;
   let groupName = groupUrl;
@@ -1363,9 +1306,6 @@ async function main() {
     // עדכון המשתנים הגלובליים לטיפול בsignals
     globalBrowser = browser;
     globalPage = page;
-
-    // טעינת נתוני session שמורים
-    await loadSessionData(page);
 
     console.log("📍 Navigating to group page...");
     logToFile(`📍 Navigating to: ${groupUrl}`);
@@ -1769,7 +1709,7 @@ if (!composerFound) {
 
     console.log("🔍 DEBUG: About to close browser...");
     try {
-      await gracefulShutdown(browser, page, "Successful completion");
+      await browser.close();
       console.log("🎉 Browser closed gracefully after successful post");
     } catch (closeError) {
       console.log("⚠️ Warning: Could not close browser properly:", closeError.message);
@@ -1797,7 +1737,13 @@ if (!composerFound) {
     logToFile(`❌ Post publishing failed: ${err.message}`);
     
     // הרישום לגוגל שיטס מטופל על ידי run-day.js כדי למנוע כפילות
-    if (browser) await gracefulShutdown(browser, globalPage, `Error: ${err.message}`);
+    if (browser) {
+      try {
+        await browser.close();
+      } catch (e) {
+        // נתעלם משגיאות סגירה
+      }
+    }
 
     // שליחת מייל מטופלת על ידי run-day.js כדי למנוע כפילות
     
@@ -1806,15 +1752,6 @@ if (!composerFound) {
     
     process.exit(1);
   }
-}
-
-// פונקציה לסגירת כל תהליכי כרום
-async function closeChromeProcesses() {
-  const { exec } = require("child_process");
-  return new Promise((resolve) => {
-    exec('taskkill /IM chrome.exe /F', () => resolve());
-    exec('taskkill /IM chromium.exe /F', () => resolve());
-  });
 }
 
 // ביטול ריטריי: הפעלה חד-פעמית בלבד

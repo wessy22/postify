@@ -513,7 +513,69 @@ ${postsList}
     let keptImages = 0; // תמונות שנשמרו מהריצה הקודמת
     let postsWithFailures = []; // פוסטים שיש להם כשלונות בתמונות
     
+    // ========== ניקוי פוסטים שנמחקו מהאתר ==========
+    const postsDir = path.join(userFolder, "posts");
+    const imagesDir = path.join(userFolder, "images");
+    
+    // רשימת כל הפוסטים שאמורים להיות (מהשרת)
+    const serverPostNames = new Set(posts.map(post => post.name));
+    
+    // בדיקה אילו פוסטים קיימים מקומית
+    let deletedPosts = 0;
+    let deletedImages = 0;
+    
+    if (fs.existsSync(postsDir)) {
+        const localPostFiles = fs.readdirSync(postsDir);
+        
+        for (const postFile of localPostFiles) {
+            if (!postFile.endsWith('.json')) continue;
+            
+            const postName = path.basename(postFile, '.json');
+            
+            // אם הפוסט לא קיים ברשימת השרת - מחק אותו
+            if (!serverPostNames.has(postName)) {
+                const postPath = path.join(postsDir, postFile);
+                const postImageDir = path.join(imagesDir, postName);
+                
+                try {
+                    // מחיקת קובץ הפוסט
+                    fs.unlinkSync(postPath);
+                    deletedPosts++;
+                    logMessage('INFO', `מחק פוסט שנמחק מהאתר: ${postName}`);
+                    console.log(`🗑️ מחק פוסט: ${postName}`);
+                    
+                    // מחיקת תיקיית התמונות של הפוסט
+                    if (fs.existsSync(postImageDir)) {
+                        const imageFiles = fs.readdirSync(postImageDir);
+                        deletedImages += imageFiles.length;
+                        
+                        // מחיקת כל התמונות
+                        for (const imageFile of imageFiles) {
+                            fs.unlinkSync(path.join(postImageDir, imageFile));
+                        }
+                        
+                        // מחיקת התיקיה עצמה
+                        fs.rmdirSync(postImageDir);
+                        logMessage('INFO', `מחק תיקיית תמונות: ${postName} (${imageFiles.length} קבצים)`);
+                    }
+                } catch (error) {
+                    logMessage('ERROR', `שגיאה במחיקת פוסט ${postName}: ${error.message}`);
+                    console.error(`❌ שגיאה במחיקת פוסט ${postName}: ${error.message}`);
+                }
+            }
+        }
+    }
+    
+    if (deletedPosts > 0) {
+        console.log(`🧹 נמחקו ${deletedPosts} פוסטים ישנים ו-${deletedImages} תמונות`);
+        logMessage('INFO', `ניקוי הושלם: ${deletedPosts} פוסטים ו-${deletedImages} תמונות נמחקו`);
+    } else {
+        console.log(`✅ כל הפוסטים המקומיים עדיין רלוונטיים`);
+        logMessage('INFO', 'לא נמצאו פוסטים ישנים למחיקה');
+    }
+    
     logMessage('INFO', `מתחיל עיבוד ${totalPosts} פוסטים`);
+    
     
     for (const post of posts) {
       let postFailedImages = 0; // מונה תמונות שנכשלו לפוסט הנוכחי
@@ -602,6 +664,9 @@ ${postsList}
     // סיכום התהליך
     logMessage('INFO', `סינכרון הושלם בהצלחה`);
     logMessage('INFO', `פוסטים: ${totalPosts} סונכרנו`);
+    if (deletedPosts > 0) {
+      logMessage('INFO', `פוסטים ישנים: ${deletedPosts} נמחקו (${deletedImages} תמונות)`);
+    }
     logMessage('INFO', `תמונות: ${successfulImages}/${totalImages} הורדו/נשמרו בהצלחה (${keptImages} נשמרו מהריצה הקודמת)`);
     if (skippedImages > 0) {
       logMessage('WARN', `${skippedImages} תמונות דולגו בגלל שגיאות`);
@@ -618,6 +683,9 @@ ${postsList}
     console.log(`\n🎉 Smart sync complete for ${hostname}!`);
     console.log(`📁 נתונים נשמרו ב: ${userFolder}`);
     console.log(`📊 ${totalPosts} פוסטים סונכרנו`);
+    if (deletedPosts > 0) {
+      console.log(`🗑️ ${deletedPosts} פוסטים ישנים נמחקו (${deletedImages} תמונות)`);
+    }
     console.log(`🖼️ תמונות: ${successfulImages}/${totalImages} מוכנות (${keptImages} נשמרו, ${successfulImages - keptImages} הורדו חדש, ${skippedImages} דולגו)`);
     if (postsWithFailures.length > 0) {
       console.log(`⚠️ ${postsWithFailures.length} פוסטים עם בעיות - נשלח מייל ללקוח`);

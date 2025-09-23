@@ -8,6 +8,4 @@ echo.
 cd /d "C:\postify\posts"
 node backup-chrome-profiles.js
 
-echo.
-echo לחץ על מקש כלשהו לסגירה...
-pause >nul
+timeout /t 10 

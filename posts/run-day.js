@@ -30,6 +30,10 @@ let DAILY_SETTINGS = {};
 // מערכת עבור מעקב אחרי כשלונות ברצף לצורך שליחת התראות דחופות
 let consecutiveFailures = [];
 
+// ========== דגל עצירה חירום ==========
+// משתנה global לעצירת כל הפעילות במקרה של 8+ כשלונות רצופים
+let emergencyStop = false;
+
 function getSettingsPath() {
     // קריאת שם השרת
     const instanceNameFile = './instance-name.txt';
@@ -189,13 +193,13 @@ function resetConsecutiveFailures() {
 function checkConsecutiveFailures() {
     console.log(`🔍 בדיקת כשלונות: ${consecutiveFailures.length} קבוצות שונות נכשלו ברצף`);
     
-    if (consecutiveFailures.length >= 5) {
+    if (consecutiveFailures.length >= 8) {
         console.log(`📋 קבוצות שנכשלו: ${consecutiveFailures.map(f => f.groupName).join(', ')}`);
-        console.log("🚨 זוהו 5+ קבוצות שונות ברצף - שולח התראה!");
+        console.log("🚨 זוהו 8+ קבוצות שונות ברצף - שולח התראה!");
         
-        // שלח את 5 הכשלונות הראשונים (כל אחד מקבוצה שונה)
-        const firstFiveFailures = consecutiveFailures.slice(0, 5);
-        sendUrgentFailureAlert(firstFiveFailures);
+        // שלח את 8 הכשלונות הראשונים (כל אחד מקבוצה שונה)
+        const firstEightFailures = consecutiveFailures.slice(0, 8);
+        sendUrgentFailureAlert(firstEightFailures);
     } else {
         console.log("✅ לא מספיק קבוצות שונות לשליחת התראה");
     }
@@ -205,8 +209,11 @@ function checkConsecutiveFailures() {
 async function sendUrgentFailureAlert(failures) {
     try {
         // הודעה דחופה לקונסול
-        console.log("🚨🚨🚨 התראה דחופה - זוהו 5 כשלונות קבוצות שונות ברצף! 🚨🚨🚨");
+        console.log("🚨🚨🚨 התראה דחופה - זוהו 8 כשלונות קבוצות שונות ברצף! 🚨🚨🚨");
         console.log("📧 שולח מייל התראה דחוף...");
+        
+        // הגדרת דגל עצירה חירום
+        emergencyStop = true;
         
         // קריאת hostname מקובץ instance-name.txt
         let hostname = "לא ידוע";
@@ -226,19 +233,20 @@ async function sendUrgentFailureAlert(failures) {
             `${index + 1}. ${f.groupName} (${f.timeStr}): ${f.errorMessage}`
         ).join('\n');
         
-        const subject = `🚨 התראה דחופה - 5 כשלונות קבוצות ברצף! [${hostname}]`;
+        const subject = `🚨 התראה דחופה - 8 כשלונות קבוצות ברצף! [${hostname}]`;
         
         const textMessage = `
 🚨 התראה דחופה מ-Postify!
 
 🖥️ שרת: ${hostname}
-זוהו 5 כשלונות של קבוצות שונות ברצף:
+זוהו 8 כשלונות של קבוצות שונות ברצף:
 
 ${failureList}
 
 ⏰ זמן התראה: ${alertTime}
 
 יש לבדוק מיידית את מצב החיבור לפייסבוק והגדרות הפרסום.
+המחשב ייכבה אוטומטית בעוד 3 דקות!
 
 Postify - מערכת ניטור אוטומטית
         `.trim();
@@ -253,7 +261,7 @@ Postify - מערכת ניטור אוטומטית
     </div>
     
     <div style="background-color:#ffffff;padding:15px;border-radius:5px;margin:15px 0;">
-      <h3 style="color:#d32f2f;">זוהו 5 כשלונות של קבוצות שונות ברצף:</h3>
+      <h3 style="color:#d32f2f;">זוהו 8 כשלונות של קבוצות שונות ברצף:</h3>
       <ol style="line-height:1.8;">
         ${failures.map(f => 
           `<li><b>${f.groupName}</b> (${f.timeStr}): ${f.errorMessage}</li>`
@@ -270,7 +278,11 @@ Postify - מערכת ניטור אוטומטית
       • בדוק חיבור לאינטרנט<br>
       • בדוק חיבור לפייסבוק<br>
       • בדוק הגדרות קבוצות<br>
-      • בדוק לוגים למידע נוסף
+      • בדוק לוגים למידע נוסף<br>
+      <br>
+      <div style="background-color:#f44336;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">
+        ⚠️ המחשב ייכבה אוטומטית בעוד 3 דקות! ⚠️
+      </div>
     </div>
     
     <div style="text-align:center;margin-top:20px;">
@@ -281,10 +293,31 @@ Postify - מערכת ניטור אוטומטית
         `.trim();
         
         await sendMail(subject, textMessage, htmlMessage);
-        console.log("🚨 התראה דחופה נשלחה - 5 כשלונות קבוצות ברצף!");
+        console.log("🚨 התראה דחופה נשלחה - 8 כשלונות קבוצות ברצף!");
+        
+        // המתנה של 3 דקות עם עדכוני זמן ואז כיבוי המחשב
+        console.log("⏰ המחשב ייכבה בעוד 3 דקות...");
+        console.log("🛑 עוצר את כל הפעילות בגלל 8 כשלונות רצופים");
+        
+        // ספירה לאחור של 3 דקות עם עדכונים כל דקה
+        for (let i = 3; i > 0; i--) {
+            console.log(`⏰ כיבוי בעוד ${i} דקות...`);
+            await new Promise(resolve => setTimeout(resolve, 60 * 1000)); // דקה אחת
+        }
+        
+        console.log("💀 כיבוי המחשב - זוהו 8 כשלונות קבוצות ברצף");
+        try {
+            require('child_process').execSync('shutdown /s /f /t 0');
+        } catch (e) {
+            console.error("❌ שגיאה בכיבוי המחשב:", e.message);
+        }
+        process.exit(1);
         
     } catch (error) {
         console.log("❌ שגיאה בשליחת התראה דחופה:", error.message);
+        // גם במקרה של שגיאה במייל, עוצרים את התוכנית
+        console.log("🛑 עוצר את התוכנית למרות שגיאה במייל");
+        process.exit(1);
     }
 }
 
@@ -1195,11 +1228,17 @@ let globalLogToSheet = null;
       }
 
       for (let pi = startPost; pi < postsToday.length; pi++) {
+        // בדיקת דגל עצירה חירום
+        if (emergencyStop) {
+          console.log("🛑 עצירה חירום - זוהו 8+ כשלונות רצופים, מפסיק את כל הפוסטים");
+          return; // יוצא מכל הפונקציה
+        }
+        
         const post = postsToday[pi];
         
         // הודעה על מערכת מעקב כשלונות רצופים
         if (pi === startPost) {
-          log("🔍 מערכת מעקב כשלונות רצופים פעילה - התראה דחופה תישלח אחרי 5 כשלונות קבוצות שונות ברצף");
+          log("🔍 מערכת מעקב כשלונות רצופים פעילה - התראה דחופה תישלח אחרי 8 כשלונות קבוצות שונות ברצף");
         }
         
         // בדיקת עצירה לפי שעה בכל פוסט
@@ -1222,6 +1261,12 @@ let globalLogToSheet = null;
         }
         
         for (let gi = (pi === startPost ? startGroup : 0); gi < groupsToPublish.length; gi++) {
+          // בדיקת דגל עצירה חירום
+          if (emergencyStop) {
+            console.log("🛑 עצירה חירום - זוהו 8+ כשלונות רצופים, מפסיק פרסום");
+            return; // יוצא מכל הפונקציה
+          }
+          
           const groupUrl = groupsToPublish[gi];
 
           log(`📢 posting to group(${gi + 1}/${groupsToPublish.length}): ${groupUrl}`);
@@ -1360,13 +1405,17 @@ let globalLogToSheet = null;
                     // בדיקה אם יש נתוני סטטוס מקובץ זמני
                     let statusData = null;
                     const tempStatusPath = path.join(__dirname, 'temp-status-data.json');
+                    console.log("🔍 DEBUG - מחפש קובץ סטטוס זמני:", tempStatusPath);
                     try {
                       if (fs.existsSync(tempStatusPath)) {
                         const statusText = fs.readFileSync(tempStatusPath, 'utf8');
                         statusData = JSON.parse(statusText);
                         // מחיקת הקובץ הזמני אחרי השימוש
                         fs.unlinkSync(tempStatusPath);
-                        console.log("📊 מוסיף נתוני סטטוס לגיליון:", statusData);
+                        console.log("� DEBUG - נתוני סטטוס שנמצאו בקובץ זמני:", statusData);
+                        console.log("�📊 מוסיף נתוני סטטוס לגיליון:", statusData);
+                      } else {
+                        console.log("⚠️ קובץ נתוני סטטוס זמני לא קיים");
                       }
                     } catch (statusError) {
                       console.log("⚠️ שגיאה בקריאת נתוני סטטוס:", statusError.message);
@@ -1374,7 +1423,16 @@ let globalLogToSheet = null;
                     
                     await logToSheet('Publishing finished', 'Success', cleanGroupName(groupName), notesText, post.title || post.filename, '', statusData);
                     
-                    log("📊 הצלחה נרשמה לגוגל שיטס" + (statusData ? " (עם נתוני סטטוס)" : ""));
+                    console.log("🔍 DEBUG - קריאה ל-logToSheet עם הפרמטרים:");
+                    console.log("   action: 'Publishing finished'");
+                    console.log("   status: 'Success'");
+                    console.log("   group:", cleanGroupName(groupName));
+                    console.log("   notes:", notesText);
+                    console.log("   postName:", post.title || post.filename);
+                    console.log("   errorLog: ''");
+                    console.log("   statusData:", statusData);
+                    
+                    log("📊 הצלחה נרשמה לגוגל שיטס" + (statusData ? " (עם נתוני סטטוס)" : " (ללא נתוני סטטוס)"));
                   } catch (e) {
                     log("⚠️ שגיאה ברישום הצלחה לגוגל שיט: " + e.message);
                   }

@@ -1,4 +1,3 @@
-const { sendErrorMail } = require("./mailer");
 const puppeteer = require("puppeteer-core");
 const { execSync, exec } = require("child_process");
 const { promisify } = require('util');
@@ -9,10 +8,6 @@ const config = require("./config.json");
 
 // יצירת execAsync פעם אחת לכל הקובץ
 const execAsync = promisify(exec);
-
-// מונה כשלונות רצופים - מתאפס בהצלחה
-let consecutiveFailures = 0;
-const MAX_CONSECUTIVE_FAILURES = 8;
 
 // פונקציית לוג לקובץ
 const LOG_FILE = path.join(__dirname, config.logFile || "log.txt");
@@ -25,68 +20,6 @@ const logToFile = (text) => {
     console.error("⚠️ שגיאה בכתיבה ללוג:", e.message);
   }
 };
-
-// פונקציה לטיפול בכשלונות רצופים
-async function handleConsecutiveFailure() {
-  consecutiveFailures++;
-  console.log(`🔴 כשלון ${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES} ברצף`);
-  logToFile(`🔴 כשלון ${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES} ברצף`);
-  
-  if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-    const errorMessage = `
-🚨 התראה דחופה! 🚨
-
-המערכת נכשלה ${consecutiveFailures} פעמים ברצף!
-
-פירוט הבעיה:
-- ${consecutiveFailures} כשלונות פרסום רצופות
-- המערכת נכנסת למצב חירום
-- השרת ייכבה אוטומטית למניעת בזבוז משאבים
-
-פעולות שבוצעו:
-✅ שליחת התראה דחופה
-⚠️ המערכת תיכבה בעוד 30 שניות
-
-נדרש התערבות ידנית לפתרון הבעיה.
-
-בברכה,
-מערכת ניטור Postify`;
-
-    try {
-      console.log("🚨 שולח התראה דחופה למנהל המערכת...");
-      await sendErrorMail(
-        `🚨 התראה דחופה - ${consecutiveFailures} כשלונות רצופות!`,
-        errorMessage
-      );
-      console.log("📧 התראה דחופה נשלחה בהצלחה");
-    } catch (mailError) {
-      console.error("❌ שגיאה בשליחת התראה דחופה:", mailError.message);
-    }
-
-    console.log("🔴 המערכת נכנסת למצב חירום - כיבוי בעוד 30 שניות...");
-    await new Promise(resolve => setTimeout(resolve, 30000));
-    
-    console.log("💀 כיבוי המערכת...");
-    logToFile("💀 מערכת נכבית בגלל כשלונות רצופים");
-    
-    // כיבוי המחשב (Windows)
-    try {
-      execSync('shutdown /s /f /t 0');
-    } catch (e) {
-      console.error("❌ שגיאה בכיבוי המערכת:", e.message);
-      process.exit(1);
-    }
-  }
-}
-
-// פונקציה לאיפוס מונה הכשלונות בהצלחה
-function resetConsecutiveFailures() {
-  if (consecutiveFailures > 0) {
-    console.log(`✅ איפוס מונה כשלונות רצופים (היה: ${consecutiveFailures})`);
-    logToFile(`✅ איפוס מונה כשלונות רצופים (היה: ${consecutiveFailures})`);
-    consecutiveFailures = 0;
-  }
-}
 
 async function runWithTimeout(fn, ms = 12 * 60 * 1000) {
   let timeout;
@@ -117,9 +50,8 @@ async function gracefulShutdown(browser, page, reason = "Normal shutdown") {
     console.log(`🔄 Starting graceful shutdown: ${reason}`);
     logToFile(`🔄 Starting graceful shutdown: ${reason}`);
     
-    // שמירת נתוני session
+    // שמירת נתוני session - הוסר, משתמשים ב-userDataDir
     if (page && !page.isClosed()) {
-      await saveSessionData(page);
       await page.close();
     }
     
@@ -194,25 +126,7 @@ let postText;
     console.error("❌ Failed to load post data:", error.message);
     logToFile(`❌ Failed to load post data: ${error.message}`);
     process.exit(1);
-  }const logToSheet = async (...args) => {
-  try {
-    const fn = require('./log-to-sheets');
-    console.log(`🔍 DEBUG logToSheet args:`, args);
-    // אם יש שגיאה ויש פרמטר שישי, הוסף אותו לעמודה G
-    if (args[1] === 'Error' && args.length >= 6 && args[5]) {
-      // args: [event, status, group, notes, postName, errorReason]
-      const errorLog = (args[5] || "שגיאה לא ידועה").replace(/[^א-ת0-9 .,:;\-()]/g, "");
-      console.log(`🔍 DEBUG Error log to column G:`, errorLog);
-      // העברת כל הפרמטרים כולל הפרמטר השישי לעמודה G
-      await fn(args[0], args[1], args[2], args[3], args[4], errorLog);
-    } else {
-      await fn(...args);
-    }
-  } catch (e) {
-    console.error('⚠️ Failed to log to Google Sheet:', e.message);
   }
-};
-
 // פונקציה משופרת לחילוץ תאריך מטקסט פוסט
 function extractPostDate(postText) {
   try {
@@ -1666,15 +1580,20 @@ if (!composerFound) {
     logToFile("✅ Post published successfully");
     postSuccessful = true; // ★ סימון שהפרסום הצליח
     
-    // שמירת session אחרי פרסום מוצלח
-    await saveSessionData(page);
-    
-    // איפוס מונה כשלונות רצופים בהצלחה
-    resetConsecutiveFailures();
+    // שמירת session אחרי פרסום מוצלח - הוסר, משתמשים ב-userDataDir
     
     // ★ בדיקת סטטוס פוסטים מיד אחרי פרסום מוצלח
     console.log("🔍 מתחיל בדיקת סטטוס פוסטים...");
     const statusResult = await checkPostStatusAfterPublish(page, groupUrl, groupName);
+    
+    // הדפסת תוצאות מפורטות לדיבוג
+    console.log("🔍 DEBUG - תוצאות בדיקת סטטוס מלאות:");
+    console.log("   success:", statusResult.success);
+    console.log("   published:", statusResult.published);
+    console.log("   pending:", statusResult.pending);
+    console.log("   rejected:", statusResult.rejected);
+    console.log("   removed:", statusResult.removed);
+    console.log("   latestPostStatus:", statusResult.latestPostStatus);
     
     // שמירת נתוני הסטטוס לקובץ זמני שיוכל לקרוא run-day.js
     const statusData = statusResult.success ? {
@@ -1684,6 +1603,8 @@ if (!composerFound) {
       rejected: statusResult.rejected || 0,
       removed: statusResult.removed || 0
     } : null;
+    
+    console.log("🔍 DEBUG - statusData שנשמר לקובץ זמני:", statusData);
     
     if (statusData) {
       try {
@@ -1747,15 +1668,11 @@ if (!composerFound) {
 
     // שליחת מייל מטופלת על ידי run-day.js כדי למנוע כפילות
     
-    // טיפול בכשלונות רצופים
-    await handleConsecutiveFailure();
-    
     process.exit(1);
   }
 }
 
 // ביטול ריטריי: הפעלה חד-פעמית בלבד
-global.__errorMailSent = false;
 async function runOnce() {
   try {
     console.log("🔍 DEBUG: Starting main function...");
@@ -1773,9 +1690,6 @@ async function runOnce() {
     
     console.log("🔍 DEBUG: Error stack:", err.stack);
     // שליחת מייל מטופלת על ידי run-day.js כדי למנוע כפילות
-    
-    // טיפול בכשלונות רצופים
-    await handleConsecutiveFailure();
     
     process.exit(1);
   }
@@ -1815,9 +1729,6 @@ process.on('uncaughtException', async (error) => {
 runWithTimeout(() => runOnce(), 12 * 60 * 1000)
   .catch(async err => {
     // שליחת מייל מטופלת על ידי run-day.js כדי למנוע כפילות
-    
-    // טיפול בכשלונות רצופים
-    await handleConsecutiveFailure();
     
     process.exit(1);
   });

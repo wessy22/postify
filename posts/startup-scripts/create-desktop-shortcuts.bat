@@ -23,4 +23,4 @@ echo - Data From Groups.lnk
 echo - Start Facebook Server.lnk  
 echo - Launch Postify Chrome.lnk
 echo.
-pause
+timeout /t 10 

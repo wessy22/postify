@@ -1329,11 +1329,11 @@ let globalLogToSheet = null;
               });
 
               // --- Graceful Timeout ---
-              const TIMEOUT = 10 * 60 * 1000;
+              const TIMEOUT = 13 * 60 * 1000;
               let mailSent = false; // דגל למנוע שליחת מייל כפולה
               let timeoutOccurred = false; // דגל לזיהוי timeout
               let timeoutId = setTimeout(async () => {
-                log(`⏰ Timeout! post.js לקח יותר מ־10 דקות. מנסה סגירה עדינה...`);
+                log(`⏰ Timeout! post.js לקח יותר מ־13 דקות. מנסה סגירה עדינה...`);
                 timeoutOccurred = true; // מסמן ש-timeout אירע
                 
                 // ניסיון סגירה עדינה תחילה

@@ -18,6 +18,7 @@ try {
 function getProviderInfo(callback) {
   https.get("https://ipinfo.io/json", (res) => {
     let data = "";
+    
     res.on("data", chunk => data += chunk);
     res.on("end", () => {
       try {

@@ -129,7 +129,7 @@ console.log(`📊 הגדרות פרסום יומי (נטען מ-daily-settings.j
   📢 מקסימום פרסומים ביום: ${DAILY_SETTINGS.MAX_PUBLICATIONS_PER_DAY}
   🧠 חלוקה חכמה: ${DAILY_SETTINGS.ENABLE_SMART_DISTRIBUTION ? 'מופעלת' : 'כבויה'}
   ⏱️ השהייה בין פוסטים: ${DAILY_SETTINGS.DELAY_BETWEEN_POSTS_MINUTES} דקות
-  🕯️ כיבוי לשבת: ${DAILY_SETTINGS.ENABLE_SABBATH_SHUTDOWN ? 'מופעל' : 'כבוי'}`);
+  🕯️ כיבוי לשבת: ${DAILY_SETTINGS.ENABLE_SABBATH_SHUTDOWN ? 'מופעל (שעה לפני)' : 'כבוי'}`);
 
 // איפוס מערכת כשלונות רצופים בתחילת כל הרצה
 consecutiveFailures = [];
@@ -394,10 +394,15 @@ function getSabbathTime() {
 
 // פונקציה לבדיקה אם צריך לכבות את המחשב לקראת שבת או חג
 function shouldShutdownForSabbath() {
+  // בדיקה אם הכיבוי לשבת מופעל בהגדרות
+  if (!DAILY_SETTINGS.ENABLE_SABBATH_SHUTDOWN) {
+    return { should: false, reason: "כיבוי לשבת כבוי בהגדרות" };
+  }
+
   const now = new Date();
   const dayOfWeek = now.getDay(); // 0=ראשון, 5=שישי, 6=שבת
   const todayStr = now.toISOString().split('T')[0]; // פורמט YYYY-MM-DD
-  
+
   // בדיקה אם היום ערב חג
   if (jewishHolidayEves.includes(todayStr)) {
     // ערב חג - כיבוי שעה לפני 19:00 (כניסת החג)
@@ -1281,6 +1286,20 @@ let globalLogToSheet = null;
           updateHeartbeat({ group: "stopped-by-hour", postFile: post.filename, status: 'stopped', index: pi });
           return;
         }
+
+        // ========== בדיקת כיבוי לשבת/חג במהלך הפרסום ==========
+        log("🕯️ בודק אם צריך לכבות מחשב לקראת שבת/חג במהלך הפרסום...");
+        const midProcessSabbathCheck = shouldShutdownForSabbath();
+        if (midProcessSabbathCheck.should) {
+          const eventType = midProcessSabbathCheck.isHolidayEve ? "חג" : "שבת";
+          log(`🕯️ זמן כיבוי ל${eventType} במהלך הפרסום! ${midProcessSabbathCheck.reason}`);
+          log(`⏰ כניסת ${eventType} ב-${midProcessSabbathCheck.sabbathTime} (עוד ${midProcessSabbathCheck.minutesUntil} דקות)`);
+          await logToSheet("Sabbath/Holiday shutdown", "Stopped", "", `כיבוי אוטומטי ל${eventType} במהלך הפרסום`);
+          await shutdownComputer(`במהלך פרסום - ${midProcessSabbathCheck.reason}`, midProcessSabbathCheck.isHolidayEve);
+          return; // הקוד לא יגיע לכאן בגלל הכיבוי
+        } else {
+          log(`✅ במהלך פרסום: ${midProcessSabbathCheck.reason}`);
+        }
         
         // קביעת רשימת הקבוצות לפרסום (מוגבלת או מלאה)
         const groupsToPublish = post.limitedGroups || post.groups;
@@ -1297,6 +1316,17 @@ let globalLogToSheet = null;
           if (emergencyStop) {
             console.log("🛑 עצירה חירום - זוהו 8+ כשלונות רצופים, מפסיק פרסום");
             return; // יוצא מכל הפונקציה
+          }
+
+          // ========== בדיקת כיבוי לשבת/חג לפני כל קבוצה ==========
+          const groupSabbathCheck = shouldShutdownForSabbath();
+          if (groupSabbathCheck.should) {
+            const eventType = groupSabbathCheck.isHolidayEve ? "חג" : "שבת";
+            log(`🕯️ זמן כיבוי ל${eventType} לפני פרסום בקבוצה! ${groupSabbathCheck.reason}`);
+            log(`⏰ כניסת ${eventType} ב-${groupSabbathCheck.sabbathTime} (עוד ${groupSabbathCheck.minutesUntil} דקות)`);
+            await logToSheet("Sabbath/Holiday shutdown", "Stopped", groupUrl, `כיבוי אוטומטי ל${eventType} לפני פרסום בקבוצה`);
+            await shutdownComputer(`לפני פרסום בקבוצה - ${groupSabbathCheck.reason}`, groupSabbathCheck.isHolidayEve);
+            return; // הקוד לא יגיע לכאן בגלל הכיבוי
           }
           
           const groupUrl = groupsToPublish[gi];

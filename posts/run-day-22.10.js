@@ -705,139 +705,6 @@ function calculateSmartDistribution(selectedPosts, maxPublications) {
   return distribution;
 }
 
-// פונקציה ליצירת חתימה ייחודית של רשימת קבוצות
-function createGroupsSignature(groups) {
-  if (!groups || groups.length === 0) return 'empty';
-  
-  // יוצר חתימה על בסיס שמות הקבוצות ומזהים
-  const signature = groups.map(group => {
-    if (typeof group === 'string') return group;
-    if (group.name) return group.name;
-    if (group.id) return group.id;
-    return JSON.stringify(group);
-  }).sort().join('|');
-  
-  return signature;
-}
-
-// פונקציה חדשה לחלוקה ייחודית של קבוצות בין פוסטים (רק לפוסטים עם רשימות זהות)
-function distributeUniqueGroupsAmongPosts(selectedPosts, distribution) {
-  console.log(`🔄 מחלק קבוצות באופן ייחודי בין ${selectedPosts.length} פוסטים`);
-  
-  // שלב 1: קיבוץ פוסטים לפי רשימת קבוצות זהה
-  const groupsBySignature = new Map();
-  
-  selectedPosts.forEach((post, postIndex) => {
-    const signature = createGroupsSignature(post.groups);
-    
-    if (!groupsBySignature.has(signature)) {
-      groupsBySignature.set(signature, {
-        posts: [],
-        postIndices: [],
-        groupCount: post.groups?.length || 0
-      });
-    }
-    
-    groupsBySignature.get(signature).posts.push(post);
-    groupsBySignature.get(signature).postIndices.push(postIndex);
-  });
-  
-  console.log(`📊 נמצאו ${groupsBySignature.size} קבוצות פוסטים עם רשימות קבוצות שונות:`);
-  
-  // הצגת פרטי הקיבוץ
-  let groupIndex = 1;
-  for (const [signature, groupData] of groupsBySignature) {
-    const shortSig = signature.length > 50 ? signature.substring(0, 50) + '...' : signature;
-    console.log(`   קבוצה ${groupIndex}: ${groupData.posts.length} פוסטים, ${groupData.groupCount} קבוצות`);
-    console.log(`      פוסטים: ${groupData.posts.map(p => p.filename).join(', ')}`);
-    console.log(`      חתימה: ${shortSig}`);
-    groupIndex++;
-  }
-  
-  // שלב 2: עיבוד כל קבוצת פוסטים בנפרד
-  const postGroups = new Array(selectedPosts.length).fill(null).map(() => []);
-  let totalAllocated = 0;
-  
-  for (const [signature, groupData] of groupsBySignature) {
-    const postsInGroup = groupData.posts;
-    const postIndicesInGroup = groupData.postIndices;
-    
-    if (postsInGroup.length === 1) {
-      // פוסט יחיד עם רשימה ייחודית - משתמש ברוטציה רגילה
-      const post = postsInGroup[0];
-      const postIndex = postIndicesInGroup[0];
-      const distItem = distribution[postIndex];
-      
-      if (distItem && distItem.allowedGroups < post.groups.length) {
-        postGroups[postIndex] = selectGroupsWithRotation(post, distItem.allowedGroups);
-        totalAllocated += postGroups[postIndex].length;
-        console.log(`🔄 פוסט יחיד ${post.filename}: רוטציה רגילה (${postGroups[postIndex].length} קבוצות)`);
-      } else {
-        postGroups[postIndex] = [...(post.groups || [])];
-        totalAllocated += postGroups[postIndex].length;
-        console.log(`✅ פוסט יחיד ${post.filename}: כל הקבוצות (${postGroups[postIndex].length} קבוצות)`);
-      }
-      
-    } else {
-      // מספר פוסטים עם אותה רשימת קבוצות - רוטציה גלובלית
-      console.log(`🌐 מטפל ב-${postsInGroup.length} פוסטים עם רשימת קבוצות זהה`);
-      
-      // טעינת מצב רוטציה ספציפי לקבוצה הזו
-      const rotationStates = loadRotationStates();
-      const groupKey = `group_rotation_${signature.substring(0, 32)}`; // חתימה מקוצרת למפתח
-      const groupState = rotationStates[groupKey] || { lastStartIndex: 0 };
-      
-      const sharedGroups = postsInGroup[0].groups || [];
-      const startIndex = groupState.lastStartIndex % sharedGroups.length;
-      
-      console.log(`🔄 רוטציה קבוצתית: התחלה מאינדקס ${startIndex} מתוך ${sharedGroups.length} קבוצות`);
-      
-      let currentGlobalIndex = startIndex;
-      // הסרנו את usedGroups - נאפשר חזרה לקבוצות כשמסיימים רצף
-      
-      // חלוקת קבוצות בין הפוסטים בקבוצה (עם חזרה ברצף)
-      postIndicesInGroup.forEach((postIndex, localIndex) => {
-        const post = postsInGroup[localIndex];
-        const distItem = distribution[postIndex];
-        const targetGroups = distItem ? distItem.allowedGroups : sharedGroups.length;
-        
-        console.log(`📝 מקצה ${targetGroups} קבוצות לפוסט ${post.filename} (רצף עם חזרה)`);
-        
-        const selectedGroups = [];
-        
-        // פשוט ברצף - אם מסיימים את הרשימה, חוזרים להתחלה
-        for (let i = 0; i < targetGroups; i++) {
-          const groupIndex = currentGlobalIndex % sharedGroups.length;
-          selectedGroups.push(sharedGroups[groupIndex]);
-          currentGlobalIndex++;
-          totalAllocated++;
-        }
-        
-        postGroups[postIndex] = selectedGroups;
-        console.log(`   ✅ הוקצו ${selectedGroups.length} קבוצות לפוסט ${post.filename} (אינדקסים ${currentGlobalIndex - targetGroups}-${currentGlobalIndex - 1})`);
-      });
-      
-      // עדכון מצב הרוטציה לקבוצה הזו
-      rotationStates[groupKey] = {
-        lastStartIndex: currentGlobalIndex % sharedGroups.length,
-        lastUpdated: new Date().toISOString(),
-        postsCount: postsInGroup.length,
-        totalAllocated: totalAllocated
-      };
-      
-      saveRotationStates(rotationStates);
-    }
-  }
-  
-  console.log(`✅ חלוקה חכמה הושלמה: ${totalAllocated} קבוצות הוקצו בסך הכל`);
-  
-  return {
-    postGroups: postGroups,
-    totalAllocated: totalAllocated,
-    groupsCount: groupsBySignature.size
-  };
-}
-
 // פונקציה משופרת לבחירת פוסטים ליום עם תמיכה במספר פוסטים וחלוקה חכמה
 function selectPostsForDay(allPosts, today = new Date()) {
   const todayStr = today.toISOString().slice(0, 10);
@@ -962,23 +829,16 @@ function selectPostsForDay(allPosts, today = new Date()) {
   if (DAILY_SETTINGS.ENABLE_SMART_DISTRIBUTION && selectedPosts.length > 0) {
     const distribution = calculateSmartDistribution(selectedPosts, DAILY_SETTINGS.MAX_PUBLICATIONS_PER_DAY);
     
-    // יצירת מאגר קבוצות מאוחד ואייחודי בין כל הפוסטים
-    const result = distributeUniqueGroupsAmongPosts(selectedPosts, distribution);
-    
     // עדכון הפוסטים עם החלוקה החכמה
     selectedPosts.forEach((post, index) => {
       const distItem = distribution[index];
-      if (result.postGroups[index]) {
-        post.limitedGroups = result.postGroups[index];
-        post.originalGroupsCount = post.groups.length;
-        post.limitedGroupsCount = result.postGroups[index].length;
-        console.log(`📊 פוסט ${post.filename}: מוגבל ל-${result.postGroups[index].length} מתוך ${post.groups.length} קבוצות (ייחודי)`);
-      } else if (distItem && distItem.allowedGroups < post.groups.length) {
-        // fallback למקרה שהפונקציה החדשה לא עובדת
+      if (distItem && distItem.allowedGroups < post.groups.length) {
+        // שימוש ברוטציה במקום slice רגיל
         post.limitedGroups = selectGroupsWithRotation(post, distItem.allowedGroups);
         post.originalGroupsCount = post.groups.length;
         post.limitedGroupsCount = distItem.allowedGroups;
-        console.log(`📊 פוסט ${post.filename}: מוגבל ל-${distItem.allowedGroups} מתוך ${post.groups.length} קבוצות (רוטציה רגילה)`);
+        console.log(`📊 פוסט ${post.filename}: מוגבל ל-${distItem.allowedGroups} מתוך ${post.groups.length} קבוצות`);
+        // הרוטציה כבר נשמרת בקובץ הנפרד, לא צריך לשמור כאן
       }
     });
   }

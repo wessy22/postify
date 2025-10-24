@@ -1464,7 +1464,10 @@ let globalLogToSheet = null;
             const eventType = groupSabbathCheck.isHolidayEve ? "חג" : "שבת";
             log(`🕯️ זמן כיבוי ל${eventType} לפני פרסום בקבוצה! ${groupSabbathCheck.reason}`);
             log(`⏰ כניסת ${eventType} ב-${groupSabbathCheck.sabbathTime} (עוד ${groupSabbathCheck.minutesUntil} דקות)`);
-            await logToSheet("Sabbath/Holiday shutdown", "Stopped", groupUrl, `כיבוי אוטומטי ל${eventType} לפני פרסום בקבוצה`);
+            
+            // הגדרת groupUrl לפני השימוש
+            const currentGroupUrl = groupsToPublish[gi] || 'Unknown group';
+            await logToSheet("Sabbath/Holiday shutdown", "Stopped", currentGroupUrl, `כיבוי אוטומטי ל${eventType} לפני פרסום בקבוצה`);
             await shutdownComputer(`לפני פרסום בקבוצה - ${groupSabbathCheck.reason}`, groupSabbathCheck.isHolidayEve);
             return; // הקוד לא יגיע לכאן בגלל הכיבוי
           }

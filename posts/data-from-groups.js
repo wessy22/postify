@@ -120,7 +120,7 @@ async function scrollAndCollectGroups(page) {
   const delay = ms => new Promise(res => setTimeout(res, ms));
   
   let scrollAttempts = 0;
-  const maxScrollAttempts = 100; // הגדלתי ל-100 ניסיונות
+  const maxScrollAttempts = 1000; // הגדלה משמעותית ל-1000 ניסיונות (עבור עד 3000+ קבוצות)
   const allCollectedGroups = new Map(); // משתמש ב-Map כדי למנוע כפילויות
   let unchangedHeightCounter = 0;
   let unchangedGroupsCounter = 0;
@@ -187,19 +187,40 @@ async function scrollAndCollectGroups(page) {
         }
       }
 
-      console.log(`📊 ניסיון גלילה ${scrollAttempts + 1}: נמצאו ${currentGroups.length} קבוצות בדף, ${newGroupsCount} חדשות. סה"כ: ${allCollectedGroups.size}`);
+      console.log(`📊 ניסיון גלילה ${scrollAttempts + 1}/${maxScrollAttempts}: נמצאו ${currentGroups.length} קבוצות בדף, ${newGroupsCount} חדשות. סה"כ: ${allCollectedGroups.size}`);
+      
+      // הדפס עדכון כל 100 קבוצות (מתאים לכמויות גדולות)
+      if (allCollectedGroups.size > 0 && allCollectedGroups.size % 100 === 0 && newGroupsCount > 0) {
+        console.log(`\n🎯 ===== אבן דרך: נאספו ${allCollectedGroups.size} קבוצות! =====\n`);
+      }
+      
+      // הדפס עדכון מיוחד כל 500 קבוצות
+      if (allCollectedGroups.size > 0 && allCollectedGroups.size % 500 === 0 && newGroupsCount > 0) {
+        console.log(`\n🌟 ===== 🚀 WOW! ${allCollectedGroups.size} קבוצות נאספו! 🚀 =====\n`);
+      }
 
       // בדיקה אם לא נוספו קבוצות חדשות
       if (allCollectedGroups.size === previousGroupsCount) {
         unchangedGroupsCounter++;
-        console.log(`⚠️ לא נוספו קבוצות חדשות (${unchangedGroupsCounter}/5)`);
+        console.log(`⚠️ לא נוספו קבוצות חדשות (${unchangedGroupsCounter}/15)`);
       } else {
         unchangedGroupsCounter = 0; // איפוס המונה כי נוספו קבוצות
       }
 
       // גלול למטה
-      const scrollResult = await safeEvaluate(page, () => {
+      const scrollResult = await safeEvaluate(page, async () => {
+        // גלילה בשני שלבים - קודם לתחתית ואז קצת למעלה כדי לגרום לפייסבוק לטעון
+        const oldScroll = window.scrollY;
         window.scrollTo(0, document.body.scrollHeight);
+        
+        // נסה גם לגלול את האלמנט הראשי
+        const mainDiv = document.querySelector('div[role="main"]');
+        if (mainDiv) {
+          mainDiv.scrollTop = mainDiv.scrollHeight;
+        }
+        
+        // כל 10 גלילות, עשה "bounce scroll" - גלול קצת למעלה ושוב למטה
+        // זה עוזר לפייסבוק להבין שצריך לטעון עוד תוכן
         return document.body.scrollHeight;
       });
 
@@ -210,7 +231,20 @@ async function scrollAndCollectGroups(page) {
         continue;
       }
 
-      await delay(2500); // המתנה ארוכה יותר לטעינת תוכן
+      // כל 20 גלילות, עשה "bounce scroll" - גלול קצת למעלה ושוב למטה
+      if (scrollAttempts > 0 && scrollAttempts % 20 === 0) {
+        console.log('🔄 מבצע bounce scroll כדי לעורר טעינת תוכן...');
+        await safeEvaluate(page, () => {
+          window.scrollBy(0, -500); // גלול 500px למעלה
+        });
+        await delay(500);
+        await safeEvaluate(page, () => {
+          window.scrollTo(0, document.body.scrollHeight); // חזור לתחתית
+        });
+        await delay(1000);
+      }
+
+      await delay(4000); // המתנה ארוכה יותר לטעינת תוכן - 4 שניות
       
       const newHeight = await safeEvaluate(page, () => document.body.scrollHeight);
       if (newHeight === null) {
@@ -227,23 +261,23 @@ async function scrollAndCollectGroups(page) {
       // בדיקה אם הדף לא גדל
       if (newHeight === previousHeight) {
         unchangedHeightCounter++;
-        console.log(`⚠️ הדף לא גדל (${unchangedHeightCounter}/5)`);
+        console.log(`⚠️ הדף לא גדל (${unchangedHeightCounter}/15)`);
       } else {
         unchangedHeightCounter = 0; // איפוס המונה כי הדף גדל
         previousHeight = newHeight;
       }
 
-      // בדיקת תנאי עצירה: הדף לא גדל וגם לא נוספו קבוצות במשך 5 ניסיונות רצופים
-      if (unchangedHeightCounter >= 5 && unchangedGroupsCounter >= 5) {
-        console.log(`✅ עצירה: הדף לא גדל ולא נוספו קבוצות במשך 5 ניסיונות רצופים`);
+      // בדיקת תנאי עצירה: הדף לא גדל וגם לא נוספו קבוצות במשך 15 ניסיונות רצופים
+      if (unchangedHeightCounter >= 15 && unchangedGroupsCounter >= 15) {
+        console.log(`✅ עצירה: הדף לא גדל ולא נוספו קבוצות במשך 15 ניסיונות רצופים`);
         console.log(`📋 סיכום סופי: נאספו ${allCollectedGroups.size} קבוצות ייחודיות`);
         break;
       }
 
       // המתנה נוספת אם נגמרו הקבוצות אבל הדף עדיין גדל
-      if (unchangedGroupsCounter >= 3 && unchangedHeightCounter < 3) {
+      if (unchangedGroupsCounter >= 8 && unchangedHeightCounter < 8) {
         console.log(`⏳ המתנה נוספת - הדף עדיין גדל אבל אין קבוצות חדשות`);
-        await delay(5000); // המתנה ארוכה יותר
+        await delay(6000); // המתנה ארוכה יותר - 6 שניות
       }
       
     } catch (error) {

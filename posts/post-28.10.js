@@ -118,14 +118,9 @@ const jsonPath = path.join(postsFolder, jsonFileName);
 let postData;
 let postText;
   try {
-    // קרא את הקובץ כ-Buffer ואז המר ל-UTF-8 מפורש
-    const fileBuffer = fs.readFileSync(jsonPath);
-    const fileContent = fileBuffer.toString('utf8');
-    postData = JSON.parse(fileContent);
+    postData = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
     postText = postData.text;
-    
     console.log("📄 Post data loaded successfully");
-    console.log("🔤 Encoding test - first 50 bytes:", fileBuffer.slice(0, 50).toString('hex'));
     logToFile(`📄 Post data loaded: ${jsonFileName}`);
   } catch (error) {
     console.error("❌ Failed to load post data:", error.message);
@@ -136,10 +131,6 @@ let postText;
 function extractPostDate(postText) {
   try {
     console.log(`🕒 מנתח תאריך מהטקסט: "${postText}"`);
-    
-    // נקה תווים בלתי נראים ורווחים מיותרים
-    postText = postText.replace(/[\u200E\u200F\u202A\u202B\u202C\u202D\u202E]/g, '').trim();
-    console.log(`🧹 טקסט מנוקה: "${postText}"`);
     
     // דפוסים שונים של תאריכים בפייסבוק - מסודרים לפי עדיפות
     const patterns = [
@@ -166,17 +157,9 @@ function extractPostDate(postText) {
       // זמן יחסי באנגלית
       /(yesterday|today)/,
       
-      // טקסטים ספציפיים בעברית - עדיפות גבוהה מאוד!
-      /^דקה אחת$/,
-      /^שעה אחת$/,
-      /^יום אחד$/,
-      
-      // זמן יחסי בלי "לפני" - חשוב! צריך להיות לפני דפוסים אחרים
-      /^(\d+)\s*(דקות?|דקה)$/,
-      /^(\d+)\s*(שעות?|שעה)$/,
-      /^(\d+)\s*(ימים?|יום)$/,
-      /^דקה$/,
-      /^שעה$/,
+      // זמן יחסי בלי "לפני"
+      /(\d+) דקות?/,
+      /(\d+) שעות?/,
       
       // זמן יחסי ארוך יותר
       /לפני (\d+) ימים?/,
@@ -210,25 +193,6 @@ function extractPostDate(postText) {
           detectedDate = new Date(Date.now() - 60000); // לפני דקה
           confidence = 99;
           console.log(`🎯 זוהה "לפני דקה" - ביטחון מקסימלי!`);
-          break;
-        }
-        // טקסטים ספציפיים בעברית
-        else if (match[0] === 'דקה אחת') {
-          detectedDate = new Date(Date.now() - 60000);
-          confidence = 99;
-          console.log(`🎯 זוהה "דקה אחת" - פוסט חדש מאוד!`);
-          break;
-        }
-        else if (match[0] === 'שעה אחת') {
-          detectedDate = new Date(Date.now() - 3600000);
-          confidence = 95;
-          console.log(`🎯 זוהה "שעה אחת"`);
-          break;
-        }
-        else if (match[0] === 'יום אחד') {
-          detectedDate = new Date(Date.now() - 86400000);
-          confidence = 90;
-          console.log(`🎯 זוהה "יום אחד"`);
           break;
         }
         // פורמטים אנגליים קצרים כמו "23h", "5m", "2d"
@@ -306,38 +270,19 @@ function extractPostDate(postText) {
           console.log(`🕒 זוהה "לפני ${num} שעות"`);
           break;
         }
-        // זמן יחסי בלי "לפני" - X דקות או X שעות או X ימים
-        else if (/^(\d+)\s*(דקות?|דקה)$/.test(match[0])) {
+        // זמן יחסי בלי "לפני" - X דקות או X שעות
+        else if (/^\d+\s+(דקות?|שעות?)$/.test(match[0])) {
           const num = parseInt(match[1]);
-          detectedDate = new Date(Date.now() - num * 60000);
-          confidence = 97 - (num * 0.2);
-          console.log(`🎯 זוהה פורמט קצר: ${num} דקות - פוסט חדש!`);
-          break;
-        }
-        else if (/^(\d+)\s*(שעות?|שעה)$/.test(match[0])) {
-          const num = parseInt(match[1]);
-          detectedDate = new Date(Date.now() - num * 3600000);
-          confidence = 93 - (num * 2);
-          console.log(`🎯 זוהה פורמט קצר: ${num} שעות`);
-          break;
-        }
-        else if (/^(\d+)\s*(ימים?|יום)$/.test(match[0])) {
-          const num = parseInt(match[1]);
-          detectedDate = new Date(Date.now() - num * 86400000);
-          confidence = 88 - (num * 3);
-          console.log(`🎯 זוהה פורמט קצר: ${num} ימים`);
-          break;
-        }
-        else if (match[0] === 'דקה') {
-          detectedDate = new Date(Date.now() - 60000);
-          confidence = 98;
-          console.log(`🎯 זוהה "דקה" - פוסט חדש מאוד!`);
-          break;
-        }
-        else if (match[0] === 'שעה') {
-          detectedDate = new Date(Date.now() - 3600000);
-          confidence = 95;
-          console.log(`🎯 זוהה "שעה"`);
+          const unit = match[2];
+          
+          if (unit.includes('דקות')) {
+            detectedDate = new Date(Date.now() - num * 60000);
+            confidence = 95 - (num * 0.2);
+          } else if (unit.includes('שעות')) {
+            detectedDate = new Date(Date.now() - num * 3600000);
+            confidence = 85 - (num * 2);
+          }
+          console.log(`🕒 זוהה זמן יחסי: ${num} ${unit}`);
           break;
         }
         // "לפני יום" או "לפני X ימים"
@@ -1159,10 +1104,12 @@ function createTextVariation(originalText) {
 }
 
 const humanType = async (element, text, page) => {
-  // נקה רווחים מיותרים ושורות ריקות אבל שמור על תגיות HTML
+  // נקה רווחים מיותרים ושורות ריקות
   let cleanText = text
     .replace(/\r\n/g, '\n') // המר CRLF ל-LF
     .replace(/\n{3,}/g, '\n\n') // הגבל שורות ריקות רצופות ל-2 לכל היותר
+    .replace(/[ \t]+/g, ' ') // הפך רווחים מרובים לרווח יחיד
+    .replace(/[ \t]*\n[ \t]*/g, '\n') // הסר רווחים בתחילת ובסוף שורות
     .trim(); // הסר רווחים מתחילת וסוף הטקסט
 
   // שיפור זיהוי קישורים - וודא שכל URL בשורה נפרדת
@@ -1172,110 +1119,30 @@ const humanType = async (element, text, page) => {
   console.log("🧹 Cleaned text (first 200 chars):", JSON.stringify(cleanText.substring(0, 200)));
 
   let charsTyped = 0;
-  let firstNewlineHandled = false;
-  const typoFrequency = 150 + Math.floor(Math.random() * 100);
-  
-  // משתנים למעקב אחר עיצוב פעיל
-  let isBoldActive = false;
-  let isItalicActive = false;
-  
-  // המר את הטקסט למערך של code points (כולל surrogate pairs)
-  // זה מבטיח שאימוג'ים לא יתפצלו
-  const textArray = Array.from(cleanText);
-  
-  // עבור על כל תו כולל תגיות
-  let i = 0;
-  while (i < textArray.length) {
-    const char = textArray[i];
-    // בדוק אם זה תגית HTML
-    if (char === '<') {
-      // צור מחרוזת מהמיקום הנוכחי ואילך לבדיקת תגית
-      const remainingText = textArray.slice(i).join('');
-      const tagMatch = remainingText.match(/^<(\/?)([bih12]+)>/);
-      
-      if (tagMatch) {
-        const isClosing = tagMatch[1] === '/';
-        const tagName = tagMatch[2];
-        
-        console.log(`🏷️ זיהוי תגית: ${isClosing ? 'סגירה' : 'פתיחה'} - ${tagName}`);
-        
-        // הפעל/כבה עיצוב לפי התגית
-        if (tagName === 'b') {
-          if (!isClosing && !isBoldActive) {
-            await page.keyboard.down('Control');
-            await page.keyboard.press('b');
-            await page.keyboard.up('Control');
-            isBoldActive = true;
-            console.log('✅ Bold הופעל');
-          } else if (isClosing && isBoldActive) {
-            await page.keyboard.down('Control');
-            await page.keyboard.press('b');
-            await page.keyboard.up('Control');
-            isBoldActive = false;
-            console.log('✅ Bold כובה');
-          }
-        } else if (tagName === 'i') {
-          if (!isClosing && !isItalicActive) {
-            await page.keyboard.down('Control');
-            await page.keyboard.press('i');
-            await page.keyboard.up('Control');
-            isItalicActive = true;
-            console.log('✅ Italic הופעל');
-          } else if (isClosing && isItalicActive) {
-            await page.keyboard.down('Control');
-            await page.keyboard.press('i');
-            await page.keyboard.up('Control');
-            isItalicActive = false;
-            console.log('✅ Italic כובה');
-          }
-        } else if (tagName === 'h1' || tagName === 'h2') {
-          // H1/H2 נשתמש ב-Bold
-          if (!isClosing && !isBoldActive) {
-            await page.keyboard.down('Control');
-            await page.keyboard.press('b');
-            await page.keyboard.up('Control');
-            isBoldActive = true;
-            console.log(`✅ ${tagName.toUpperCase()} הופעל כ-Bold`);
-          } else if (isClosing && isBoldActive) {
-            await page.keyboard.down('Control');
-            await page.keyboard.press('b');
-            await page.keyboard.up('Control');
-            isBoldActive = false;
-            console.log(`✅ ${tagName.toUpperCase()} כובה`);
-          }
-        }
-        
-        // דלג על התגית
-        i += tagMatch[0].length;
-        await new Promise(r => setTimeout(r, 100));
-        continue;
-      }
-    }
-    
-    // התו כבר מוגדר למעלה: const char = textArray[i];
-    
-    // סימולציה של שגיאת הקלדה
+  let firstNewlineHandled = false; // דגל לעקוב אחרי האנטר הראשון
+  const typoFrequency = 150 + Math.floor(Math.random() * 100); // כל 150–250 תווים
+
+  for (const char of cleanText) {
     if (charsTyped > 0 && charsTyped % typoFrequency === 0 && /[a-zא-ת]/i.test(char)) {
       const wrongChar = String.fromCharCode(char.charCodeAt(0) + 1);
-      await element.type(wrongChar, { delay: 20 });
+      await element.type(wrongChar, { delay: 20 }); // הוספת delay לטייפינג
       await new Promise(r => setTimeout(r, 100 + Math.random() * 100));
       await element.press('Backspace');
       await new Promise(r => setTimeout(r, 100));
     }
 
-    // טיפול באנטר ראשון
+    // טיפול מיוחד באנטר הראשון - Shift+Enter במקום Enter רגיל
     if (char === '\n' && !firstNewlineHandled) {
-      console.log("🔄 מעבד אנטר ראשון עם Shift+Enter");
+      console.log("🔄 מעבד אנטר ראשון עם Shift+Enter לתצוגה טובה יותר");
       await page.keyboard.down('Shift');
       await page.keyboard.press('Enter');
       await page.keyboard.up('Shift');
       firstNewlineHandled = true;
     } else {
-      await element.type(char, { delay: 20 });
+      await element.type(char, { delay: 20 }); // הוספת delay לכל תו
     }
     
     charsTyped++;
-    i++;
 
     const delay = 30 + Math.floor(Math.random() * 120);
     await new Promise(r => setTimeout(r, delay));
@@ -1284,20 +1151,6 @@ const humanType = async (element, text, page) => {
       const pause = 400 + Math.random() * 600;
       await new Promise(r => setTimeout(r, pause));
     }
-  }
-  
-  // ודא שהעיצוב כבוי בסוף
-  if (isBoldActive) {
-    await page.keyboard.down('Control');
-    await page.keyboard.press('b');
-    await page.keyboard.up('Control');
-    console.log('🔚 Bold כובה בסיום');
-  }
-  if (isItalicActive) {
-    await page.keyboard.down('Control');
-    await page.keyboard.press('i');
-    await page.keyboard.up('Control');
-    console.log('🔚 Italic כובה בסיום');
   }
 };
 
@@ -1344,9 +1197,7 @@ async function main() {
         "--no-sandbox",
         "--disable-setuid-sandbox",
         "--window-size=1280,800",
-        "--profile-directory=Default",
-        "--lang=he-IL",
-        "--disable-blink-features=AutomationControlled"
+        "--profile-directory=Default"
       ]
     });
 
@@ -1354,11 +1205,6 @@ async function main() {
     const pages = await browser.pages();
     const page = pages.length > 0 ? pages[0] : await browser.newPage();
     console.log(`🗂️ משתמש בטאב קיים (${pages.length} טאבים נמצאו)`);
-    
-    // הגדרת encoding מפורש ל-UTF-8
-    await page.setExtraHTTPHeaders({
-      'Accept-Charset': 'utf-8'
-    });
     
     // סגירת טאבים נוספים אם יש
     const allPages = await browser.pages();
@@ -1571,20 +1417,6 @@ if (!composerFound) {
     console.log("📝 Typing post text...");
     console.log("🔍 Original post text length:", postText.length);
     console.log("🔍 Original post text (first 200 chars):", JSON.stringify(postText.substring(0, 200)));
-    
-    // בדיקת האימוג'י הראשון - בדיקה נכונה של surrogate pairs
-    const emojiRegex = /[\u{1F000}-\u{1FFFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/u;
-    const firstEmoji = postText.match(emojiRegex);
-    if (firstEmoji) {
-      console.log("🎨 First emoji found:", firstEmoji[0]);
-      // ספירת code units (כולל surrogate pairs)
-      const codeUnits = [];
-      for (let i = 0; i < firstEmoji[0].length; i++) {
-        codeUnits.push(firstEmoji[0].charCodeAt(i).toString(16));
-      }
-      console.log("🎨 Emoji code units:", codeUnits.join(' '));
-      console.log("🎨 Emoji code point:", firstEmoji[0].codePointAt(0).toString(16));
-    }
     
     // יצירת וריאציה של הטקסט לפני הכתיבה
     const variedPostText = createTextVariation(postText);

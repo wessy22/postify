@@ -1,10 +1,13 @@
 const fs = require('fs');
 const path = require('path');
 const { exec } = require('child_process');
+const { spawn } = require('child_process');
 const { sendErrorMail, sendMail } = require("./mailer");
 
 // קבוע לקובץ מצבי רוטציה
 const ROTATION_STATE_FILE = path.join(__dirname, "rotation-states.json");
+
+console.log("🔧 RUN-DAY initialized");
 
 // ================================================================
 // RUNDAY - מערכת תזמון פוסטים משודרגת עם מניעת כפילויות תאריכים
@@ -22,6 +25,14 @@ const ROTATION_STATE_FILE = path.join(__dirname, "rotation-states.json");
 // הגדרות נטענות מקובץ daily-settings.json מתיקיית המשתמש הספציפי
 // ניתן לעדכן את ההגדרות בזמן אמת ללא הפסקת המערכת
 let DAILY_SETTINGS = {};
+
+// ========== מעקב כשלונות רצופים ==========
+// מערכת עבור מעקב אחרי כשלונות ברצף לצורך שליחת התראות דחופות
+let consecutiveFailures = [];
+
+// ========== דגל עצירה חירום ==========
+// משתנה global לעצירת כל הפעילות במקרה של 8+ כשלונות רצופים
+let emergencyStop = false;
 
 function getSettingsPath() {
     // קריאת שם השרת
@@ -118,7 +129,11 @@ console.log(`📊 הגדרות פרסום יומי (נטען מ-daily-settings.j
   📢 מקסימום פרסומים ביום: ${DAILY_SETTINGS.MAX_PUBLICATIONS_PER_DAY}
   🧠 חלוקה חכמה: ${DAILY_SETTINGS.ENABLE_SMART_DISTRIBUTION ? 'מופעלת' : 'כבויה'}
   ⏱️ השהייה בין פוסטים: ${DAILY_SETTINGS.DELAY_BETWEEN_POSTS_MINUTES} דקות
-  🕯️ כיבוי לשבת: ${DAILY_SETTINGS.ENABLE_SABBATH_SHUTDOWN ? 'מופעל' : 'כבוי'}`);
+  🕯️ כיבוי לשבת: ${DAILY_SETTINGS.ENABLE_SABBATH_SHUTDOWN ? 'מופעל (שעה לפני)' : 'כבוי'}`);
+
+// איפוס מערכת כשלונות רצופים בתחילת כל הרצה
+consecutiveFailures = [];
+console.log("🔄 מערכת כשלונות רצופים אופסה לתחילת יום חדש");
 
 // הוספת פונקציה לעדכון הגדרות דינמי
 function updateMaxPosts(newMax) {
@@ -131,6 +146,233 @@ function updateMaxPublications(newMax) {
 
 function updateDelay(newDelay) {
     return updateDailySettings({ DELAY_BETWEEN_POSTS_MINUTES: newDelay });
+}
+
+// ========== רשימות חגים וערבי חגים עבריים ==========
+
+// חגי ישראל + ימי זיכרון 2025-2035 (מעודכן בתאריכים הנכונים)
+const jewishHolidaysAndMemorials = [
+  // 2025 - מבוסס על התאריכים הנכונים שסופקו
+  "2025-09-23","2025-09-24","2025-10-02","2025-10-07","2025-10-14",
+  // 2026
+  "2026-04-13","2026-04-19","2026-06-02","2026-09-12","2026-09-13","2026-09-21","2026-09-26","2026-10-03",
+  // 2027
+  "2027-04-02","2027-04-08","2027-05-22","2027-10-01","2027-10-02","2027-10-10","2027-10-15","2027-10-22",
+  // 2028
+  "2028-04-20","2028-04-26","2028-06-09","2028-09-20","2028-09-21","2028-09-29","2028-10-04","2028-10-11",
+  // 2029
+  "2029-04-09","2029-04-15","2029-05-29","2029-09-09","2029-09-10","2029-09-18","2029-09-23","2029-09-30",
+  // 2030
+  "2030-03-29","2030-04-04","2030-05-18","2030-09-28","2030-09-29","2030-10-07","2030-10-12","2030-10-19",
+  // 2031
+  "2031-04-17","2031-04-23","2031-06-06","2031-09-17","2031-09-18","2031-09-26","2031-10-01","2031-10-08",
+  // 2032
+  "2032-04-06","2032-04-12","2032-05-26","2032-10-05","2032-10-06","2032-10-14","2032-10-19","2032-10-26",
+  // 2033
+  "2033-03-26","2033-04-01","2033-05-15","2033-09-25","2033-09-26","2033-10-04","2033-10-09","2033-10-16",
+  // 2034
+  "2034-04-14","2034-04-20","2034-06-03","2034-09-14","2034-09-15","2034-09-23","2034-09-28","2034-10-05",
+  // 2035
+  "2035-04-03","2035-04-09","2035-05-23","2035-10-03","2035-10-04","2035-10-12","2035-10-17","2035-10-24"
+];
+
+// ערבי חגים (יום לפני כל חג) - לכיבוי שעה לפני כניסת החג
+const jewishHolidayEves = [
+  // 2025 - ערבי החגים (יום לפני)
+  "2025-09-22","2025-09-23","2025-10-01","2025-10-06","2025-10-13",
+  // 2026
+  "2026-04-12","2026-04-18","2026-06-01","2026-09-11","2026-09-12","2026-09-20","2026-09-25","2026-10-02",
+  // 2027
+  "2027-04-01","2027-04-07","2027-05-21","2027-09-30","2027-10-01","2027-10-09","2027-10-14","2027-10-21",
+  // 2028
+  "2028-04-19","2028-04-25","2028-06-08","2028-09-19","2028-09-20","2028-09-28","2028-10-03","2028-10-10",
+  // 2029
+  "2029-04-08","2029-04-14","2029-05-28","2029-09-08","2029-09-09","2029-09-17","2029-09-22","2029-09-29",
+  // 2030
+  "2030-03-28","2030-04-03","2030-05-17","2030-09-27","2030-09-28","2030-10-06","2030-10-11","2030-10-18",
+  // 2031
+  "2031-04-16","2031-04-22","2031-06-05","2031-09-16","2031-09-17","2031-09-25","2031-09-30","2031-10-07",
+  // 2032
+  "2032-04-05","2032-04-11","2032-05-25","2032-10-04","2032-10-05","2032-10-13","2032-10-18","2032-10-25",
+  // 2033
+  "2033-03-25","2033-03-31","2033-05-14","2033-09-24","2033-09-25","2033-10-03","2033-10-08","2033-10-15",
+  // 2034
+  "2034-04-13","2034-04-19","2034-06-02","2034-09-13","2034-09-14","2034-09-22","2034-09-27","2034-10-04",
+  // 2035
+  "2035-04-02","2035-04-08","2035-05-22","2035-10-02","2035-10-03","2035-10-11","2035-10-16","2035-10-23"
+];
+
+// ========== מערכת מעקב כשלונות רצופים ==========
+
+// פונקציה לרישום כשלון קבוצה
+function recordGroupFailure(groupName, groupUrl, errorMessage) {
+    // בדיקה אם הקבוצה כבר נרשמה בכשלונות הרצופים (לפי URL)
+    const isAlreadyFailed = consecutiveFailures.some(f => f.groupUrl === groupUrl);
+    
+    if (!isAlreadyFailed) {
+        const now = new Date();
+        const failure = {
+            groupName: groupName,
+            groupUrl: groupUrl,
+            timestamp: now.toISOString(),
+            timeStr: now.toLocaleTimeString('he-IL', { timeZone: 'Asia/Jerusalem' }),
+            errorMessage: errorMessage
+        };
+        
+        consecutiveFailures.push(failure);
+        
+        // שמירה על מקסימום 10 כשלונות אחרונים
+        if (consecutiveFailures.length > 10) {
+            consecutiveFailures.shift();
+        }
+        
+        console.log(`❌ רישום כשלון קבוצה: ${groupName} (URL: ${groupUrl}) (סה"כ כשלונות רצופים: ${consecutiveFailures.length})`);
+        
+        // בדיקה אם יש 5 כשלונות רצופים של קבוצות שונות
+        checkConsecutiveFailures();
+    } else {
+        console.log(`🔄 קבוצה ${groupName} כבר רשומה בכשלונות הרצופים - דילוג על רישום נוסף`);
+    }
+}
+
+// פונקציה לאיפוס כשלונות (נקרא בהצלחה)
+function resetConsecutiveFailures() {
+    if (consecutiveFailures.length > 0) {
+        console.log(`✅ איפוס כשלונות רצופים (היו ${consecutiveFailures.length} כשלונות)`);
+        consecutiveFailures = [];
+    }
+}
+
+// פונקציה לבדיקת כשלונות רצופים ושליחת התראה
+function checkConsecutiveFailures() {
+    console.log(`🔍 בדיקת כשלונות: ${consecutiveFailures.length} קבוצות שונות נכשלו ברצף`);
+    
+    if (consecutiveFailures.length >= 8) {
+        console.log(`📋 קבוצות שנכשלו: ${consecutiveFailures.map(f => f.groupName).join(', ')}`);
+        console.log("🚨 זוהו 8+ קבוצות שונות ברצף - שולח התראה!");
+        
+        // שלח את 8 הכשלונות הראשונים (כל אחד מקבוצה שונה)
+        const firstEightFailures = consecutiveFailures.slice(0, 8);
+        sendUrgentFailureAlert(firstEightFailures);
+    } else {
+        console.log("✅ לא מספיק קבוצות שונות לשליחת התראה");
+    }
+}
+
+// פונקציה לשליחת התראה דחופה
+async function sendUrgentFailureAlert(failures) {
+    try {
+        // הודעה דחופה לקונסול
+        console.log("🚨🚨🚨 התראה דחופה - זוהו 8 כשלונות קבוצות שונות ברצף! 🚨🚨🚨");
+        console.log("📧 שולח מייל התראה דחוף...");
+        
+        // הגדרת דגל עצירה חירום
+        emergencyStop = true;
+        
+        // קריאת hostname מקובץ instance-name.txt
+        let hostname = "לא ידוע";
+        try {
+            const instanceNameFile = './instance-name.txt';
+            if (fs.existsSync(instanceNameFile)) {
+                hostname = fs.readFileSync(instanceNameFile, 'utf8').trim();
+            }
+        } catch (e) {
+            console.log("⚠️ לא ניתן לקרוא hostname:", e.message);
+        }
+        
+        const now = new Date();
+        const alertTime = now.toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' });
+        
+        const failureList = failures.map((f, index) => 
+            `${index + 1}. ${f.groupName} (${f.timeStr}): ${f.errorMessage}`
+        ).join('\n');
+        
+        const subject = `🚨 התראה דחופה - 8 כשלונות קבוצות ברצף! [${hostname}]`;
+        
+        const textMessage = `
+🚨 התראה דחופה מ-Postify!
+
+🖥️ שרת: ${hostname}
+זוהו 8 כשלונות של קבוצות שונות ברצף:
+
+${failureList}
+
+⏰ זמן התראה: ${alertTime}
+
+יש לבדוק מיידית את מצב החיבור לפייסבוק והגדרות הפרסום.
+המחשב ייכבה אוטומטית בעוד 3 דקות!
+
+Postify - מערכת ניטור אוטומטית
+        `.trim();
+        
+        const htmlMessage = `
+<div dir="rtl" style="text-align:right;font-family:Arial,sans-serif;">
+  <div style="background-color:#ffebee;border:2px solid #f44336;border-radius:8px;padding:20px;">
+    <h2 style="color:#d32f2f;margin-top:0;">🚨 התראה דחופה מ-Postify!</h2>
+    
+    <div style="background-color:#e8f5e8;padding:10px;border-radius:5px;margin:10px 0;">
+      <b>🖥️ שרת:</b> <span style="background-color:#4CAF50;color:white;padding:2px 8px;border-radius:3px;">${hostname}</span>
+    </div>
+    
+    <div style="background-color:#ffffff;padding:15px;border-radius:5px;margin:15px 0;">
+      <h3 style="color:#d32f2f;">זוהו 8 כשלונות של קבוצות שונות ברצף:</h3>
+      <ol style="line-height:1.8;">
+        ${failures.map(f => 
+          `<li><b>${f.groupName}</b> (${f.timeStr}): ${f.errorMessage}</li>`
+        ).join('')}
+      </ol>
+    </div>
+    
+    <div style="background-color:#fff3e0;padding:10px;border-radius:5px;margin:10px 0;">
+      <b>⏰ זמן התראה:</b> ${alertTime}
+    </div>
+    
+    <div style="background-color:#ffcdd2;padding:15px;border-radius:5px;margin:15px 0;">
+      <b>🔧 פעולות מומלצות:</b><br>
+      • בדוק חיבור לאינטרנט<br>
+      • בדוק חיבור לפייסבוק<br>
+      • בדוק הגדרות קבוצות<br>
+      • בדוק לוגים למידע נוסף<br>
+      <br>
+      <div style="background-color:#f44336;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">
+        ⚠️ המחשב ייכבה אוטומטית בעוד 3 דקות! ⚠️
+      </div>
+    </div>
+    
+    <div style="text-align:center;margin-top:20px;">
+      <b>Postify - מערכת ניטור אוטומטית</b>
+    </div>
+  </div>
+</div>
+        `.trim();
+        
+        await sendMail(subject, textMessage, htmlMessage);
+        console.log("🚨 התראה דחופה נשלחה - 8 כשלונות קבוצות ברצף!");
+        
+        // המתנה של 3 דקות עם עדכוני זמן ואז כיבוי המחשב
+        console.log("⏰ המחשב ייכבה בעוד 3 דקות...");
+        console.log("🛑 עוצר את כל הפעילות בגלל 8 כשלונות רצופים");
+        
+        // ספירה לאחור של 3 דקות עם עדכונים כל דקה
+        for (let i = 3; i > 0; i--) {
+            console.log(`⏰ כיבוי בעוד ${i} דקות...`);
+            await new Promise(resolve => setTimeout(resolve, 60 * 1000)); // דקה אחת
+        }
+        
+        console.log("💀 כיבוי המחשב - זוהו 8 כשלונות קבוצות ברצף");
+        try {
+            require('child_process').execSync('shutdown /s /f /t 0');
+        } catch (e) {
+            console.error("❌ שגיאה בכיבוי המחשב:", e.message);
+        }
+        process.exit(1);
+        
+    } catch (error) {
+        console.log("❌ שגיאה בשליחת התראה דחופה:", error.message);
+        // גם במקרה של שגיאה במייל, עוצרים את התוכנית
+        console.log("🛑 עוצר את התוכנית למרות שגיאה במייל");
+        process.exit(1);
+    }
 }
 
 // ========== פונקציות כיבוי מחשב לשבת ==========
@@ -150,14 +392,41 @@ function getSabbathTime() {
   return sabbathTime;
 }
 
-// פונקציה לבדיקה אם צריך לכבות את המחשב לקראת שבת
+// פונקציה לבדיקה אם צריך לכבות את המחשב לקראת שבת או חג
 function shouldShutdownForSabbath() {
+  // בדיקה אם הכיבוי לשבת מופעל בהגדרות
+  if (!DAILY_SETTINGS.ENABLE_SABBATH_SHUTDOWN) {
+    return { should: false, reason: "כיבוי לשבת כבוי בהגדרות" };
+  }
+
   const now = new Date();
   const dayOfWeek = now.getDay(); // 0=ראשון, 5=שישי, 6=שבת
+  const todayStr = now.toISOString().split('T')[0]; // פורמט YYYY-MM-DD
+
+  // בדיקה אם היום ערב חג
+  if (jewishHolidayEves.includes(todayStr)) {
+    // ערב חג - כיבוי שעה לפני 19:00 (כניסת החג)
+    const holidayTime = new Date(now);
+    holidayTime.setHours(19, 0, 0, 0); // כניסת החג ב-19:00
+    const oneHourBefore = new Date(holidayTime.getTime() - 60 * 60 * 1000); // שעה לפני
+    
+    if (now >= oneHourBefore) {
+      const minutesUntilHoliday = Math.round((holidayTime.getTime() - now.getTime()) / (1000 * 60));
+      return { 
+        should: true, 
+        reason: `שעה לפני כניסת החג`,
+        minutesUntil: minutesUntilHoliday,
+        sabbathTime: holidayTime.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }),
+        isHolidayEve: true
+      };
+    }
+    
+    return { should: false, reason: "עדיין יותר משעה לכניסת החג" };
+  }
   
-  // בדיקה רק ביום שישי
+  // בדיקה רק ביום שישי (ערב שבת)
   if (dayOfWeek !== 5) {
-    return { should: false, reason: "לא יום שישי" };
+    return { should: false, reason: "לא יום שישי ולא ערב חג" };
   }
   
   const sabbathTime = getSabbathTime();
@@ -169,7 +438,8 @@ function shouldShutdownForSabbath() {
       should: true, 
       reason: `שעה לפני כניסת שבת`,
       minutesUntil: minutesUntilSabbath,
-      sabbathTime: sabbathTime.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })
+      sabbathTime: sabbathTime.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }),
+      isHolidayEve: false
     };
   }
   
@@ -177,20 +447,23 @@ function shouldShutdownForSabbath() {
 }
 
 // פונקציה לכיבוי המחשב
-async function shutdownComputer(reason) {
+async function shutdownComputer(reason, isHolidayEve = false) {
   const { exec } = require('child_process');
   
+  const eventType = isHolidayEve ? "החג" : "השבת";
+  const greeting = isHolidayEve ? "חג שמח! 🎉" : "שבת שלום! 🕯️";
+  
   console.log(`🕯️ ${reason}`);
-  console.log("💤 כיבוי המחשב לכבוד השבת...");
+  console.log(`💤 כיבוי המחשב לכבוד ${eventType}...`);
   
   try {
-    // שליחת מייל הודעה על כיבוי לשבת
+    // שליחת מייל הודעה על כיבוי לשבת/חג
     await sendMail(
-      "🕯️ כיבוי אוטומטי לכבוד השבת",
-      `המערכת מבצעת כיבוי אוטומטי לכבוד השבת.\n\nסיבה: ${reason}\nזמן: ${new Date().toLocaleString('he-IL')}\n\nשבת שלום! 🕯️`
+      `🕯️ כיבוי אוטומטי לכבוד ${eventType}`,
+      `המערכת מבצעת כיבוי אוטומטי לכבוד ${eventType}.\n\nסיבה: ${reason}\nזמן: ${new Date().toLocaleString('he-IL')}\n\n${greeting}`
     );
     
-    console.log("📧 נשלח מייל הודעה על כיבוי לשבת");
+    console.log(`📧 נשלח מייל הודעה על כיבוי ל${eventType}`);
   } catch (e) {
     console.log("⚠️ לא ניתן לשלוח מייל הודעה: " + e.message);
   }
@@ -432,6 +705,139 @@ function calculateSmartDistribution(selectedPosts, maxPublications) {
   return distribution;
 }
 
+// פונקציה ליצירת חתימה ייחודית של רשימת קבוצות
+function createGroupsSignature(groups) {
+  if (!groups || groups.length === 0) return 'empty';
+  
+  // יוצר חתימה על בסיס שמות הקבוצות ומזהים
+  const signature = groups.map(group => {
+    if (typeof group === 'string') return group;
+    if (group.name) return group.name;
+    if (group.id) return group.id;
+    return JSON.stringify(group);
+  }).sort().join('|');
+  
+  return signature;
+}
+
+// פונקציה חדשה לחלוקה ייחודית של קבוצות בין פוסטים (רק לפוסטים עם רשימות זהות)
+function distributeUniqueGroupsAmongPosts(selectedPosts, distribution) {
+  console.log(`🔄 מחלק קבוצות באופן ייחודי בין ${selectedPosts.length} פוסטים`);
+  
+  // שלב 1: קיבוץ פוסטים לפי רשימת קבוצות זהה
+  const groupsBySignature = new Map();
+  
+  selectedPosts.forEach((post, postIndex) => {
+    const signature = createGroupsSignature(post.groups);
+    
+    if (!groupsBySignature.has(signature)) {
+      groupsBySignature.set(signature, {
+        posts: [],
+        postIndices: [],
+        groupCount: post.groups?.length || 0
+      });
+    }
+    
+    groupsBySignature.get(signature).posts.push(post);
+    groupsBySignature.get(signature).postIndices.push(postIndex);
+  });
+  
+  console.log(`📊 נמצאו ${groupsBySignature.size} קבוצות פוסטים עם רשימות קבוצות שונות:`);
+  
+  // הצגת פרטי הקיבוץ
+  let groupIndex = 1;
+  for (const [signature, groupData] of groupsBySignature) {
+    const shortSig = signature.length > 50 ? signature.substring(0, 50) + '...' : signature;
+    console.log(`   קבוצה ${groupIndex}: ${groupData.posts.length} פוסטים, ${groupData.groupCount} קבוצות`);
+    console.log(`      פוסטים: ${groupData.posts.map(p => p.filename).join(', ')}`);
+    console.log(`      חתימה: ${shortSig}`);
+    groupIndex++;
+  }
+  
+  // שלב 2: עיבוד כל קבוצת פוסטים בנפרד
+  const postGroups = new Array(selectedPosts.length).fill(null).map(() => []);
+  let totalAllocated = 0;
+  
+  for (const [signature, groupData] of groupsBySignature) {
+    const postsInGroup = groupData.posts;
+    const postIndicesInGroup = groupData.postIndices;
+    
+    if (postsInGroup.length === 1) {
+      // פוסט יחיד עם רשימה ייחודית - משתמש ברוטציה רגילה
+      const post = postsInGroup[0];
+      const postIndex = postIndicesInGroup[0];
+      const distItem = distribution[postIndex];
+      
+      if (distItem && distItem.allowedGroups < post.groups.length) {
+        postGroups[postIndex] = selectGroupsWithRotation(post, distItem.allowedGroups);
+        totalAllocated += postGroups[postIndex].length;
+        console.log(`🔄 פוסט יחיד ${post.filename}: רוטציה רגילה (${postGroups[postIndex].length} קבוצות)`);
+      } else {
+        postGroups[postIndex] = [...(post.groups || [])];
+        totalAllocated += postGroups[postIndex].length;
+        console.log(`✅ פוסט יחיד ${post.filename}: כל הקבוצות (${postGroups[postIndex].length} קבוצות)`);
+      }
+      
+    } else {
+      // מספר פוסטים עם אותה רשימת קבוצות - רוטציה גלובלית
+      console.log(`🌐 מטפל ב-${postsInGroup.length} פוסטים עם רשימת קבוצות זהה`);
+      
+      // טעינת מצב רוטציה ספציפי לקבוצה הזו
+      const rotationStates = loadRotationStates();
+      const groupKey = `group_rotation_${signature.substring(0, 32)}`; // חתימה מקוצרת למפתח
+      const groupState = rotationStates[groupKey] || { lastStartIndex: 0 };
+      
+      const sharedGroups = postsInGroup[0].groups || [];
+      const startIndex = groupState.lastStartIndex % sharedGroups.length;
+      
+      console.log(`🔄 רוטציה קבוצתית: התחלה מאינדקס ${startIndex} מתוך ${sharedGroups.length} קבוצות`);
+      
+      let currentGlobalIndex = startIndex;
+      // הסרנו את usedGroups - נאפשר חזרה לקבוצות כשמסיימים רצף
+      
+      // חלוקת קבוצות בין הפוסטים בקבוצה (עם חזרה ברצף)
+      postIndicesInGroup.forEach((postIndex, localIndex) => {
+        const post = postsInGroup[localIndex];
+        const distItem = distribution[postIndex];
+        const targetGroups = distItem ? distItem.allowedGroups : sharedGroups.length;
+        
+        console.log(`📝 מקצה ${targetGroups} קבוצות לפוסט ${post.filename} (רצף עם חזרה)`);
+        
+        const selectedGroups = [];
+        
+        // פשוט ברצף - אם מסיימים את הרשימה, חוזרים להתחלה
+        for (let i = 0; i < targetGroups; i++) {
+          const groupIndex = currentGlobalIndex % sharedGroups.length;
+          selectedGroups.push(sharedGroups[groupIndex]);
+          currentGlobalIndex++;
+          totalAllocated++;
+        }
+        
+        postGroups[postIndex] = selectedGroups;
+        console.log(`   ✅ הוקצו ${selectedGroups.length} קבוצות לפוסט ${post.filename} (אינדקסים ${currentGlobalIndex - targetGroups}-${currentGlobalIndex - 1})`);
+      });
+      
+      // עדכון מצב הרוטציה לקבוצה הזו
+      rotationStates[groupKey] = {
+        lastStartIndex: currentGlobalIndex % sharedGroups.length,
+        lastUpdated: new Date().toISOString(),
+        postsCount: postsInGroup.length,
+        totalAllocated: totalAllocated
+      };
+      
+      saveRotationStates(rotationStates);
+    }
+  }
+  
+  console.log(`✅ חלוקה חכמה הושלמה: ${totalAllocated} קבוצות הוקצו בסך הכל`);
+  
+  return {
+    postGroups: postGroups,
+    totalAllocated: totalAllocated,
+    groupsCount: groupsBySignature.size
+  };
+}
+
 // פונקציה משופרת לבחירת פוסטים ליום עם תמיכה במספר פוסטים וחלוקה חכמה
 function selectPostsForDay(allPosts, today = new Date()) {
   const todayStr = today.toISOString().slice(0, 10);
@@ -556,16 +962,23 @@ function selectPostsForDay(allPosts, today = new Date()) {
   if (DAILY_SETTINGS.ENABLE_SMART_DISTRIBUTION && selectedPosts.length > 0) {
     const distribution = calculateSmartDistribution(selectedPosts, DAILY_SETTINGS.MAX_PUBLICATIONS_PER_DAY);
     
+    // יצירת מאגר קבוצות מאוחד ואייחודי בין כל הפוסטים
+    const result = distributeUniqueGroupsAmongPosts(selectedPosts, distribution);
+    
     // עדכון הפוסטים עם החלוקה החכמה
     selectedPosts.forEach((post, index) => {
       const distItem = distribution[index];
-      if (distItem && distItem.allowedGroups < post.groups.length) {
-        // שימוש ברוטציה במקום slice רגיל
+      if (result.postGroups[index]) {
+        post.limitedGroups = result.postGroups[index];
+        post.originalGroupsCount = post.groups.length;
+        post.limitedGroupsCount = result.postGroups[index].length;
+        console.log(`📊 פוסט ${post.filename}: מוגבל ל-${result.postGroups[index].length} מתוך ${post.groups.length} קבוצות (ייחודי)`);
+      } else if (distItem && distItem.allowedGroups < post.groups.length) {
+        // fallback למקרה שהפונקציה החדשה לא עובדת
         post.limitedGroups = selectGroupsWithRotation(post, distItem.allowedGroups);
         post.originalGroupsCount = post.groups.length;
         post.limitedGroupsCount = distItem.allowedGroups;
-        console.log(`📊 פוסט ${post.filename}: מוגבל ל-${distItem.allowedGroups} מתוך ${post.groups.length} קבוצות`);
-        // הרוטציה כבר נשמרת בקובץ הנפרד, לא צריך לשמור כאן
+        console.log(`📊 פוסט ${post.filename}: מוגבל ל-${distItem.allowedGroups} מתוך ${post.groups.length} קבוצות (רוטציה רגילה)`);
       }
     });
   }
@@ -590,6 +1003,11 @@ function cleanGroupName(groupName) {
     .replace(/\s+/g, ' ')
     // הסרת רווחים בהתחלה ובסוף
     .trim();
+    
+  // אם אחרי הניקוי לא נשאר כלום, החזר "אין שם קבוצה"
+  if (!cleaned || cleaned === '') {
+    return "אין שם קבוצה";
+  }
     
   return cleaned;
 }
@@ -764,12 +1182,19 @@ function updateHeartbeat({ group, postFile, status, index }) {
   console.log("⚠️ לא ניתן לכתוב heartbeat לאף מקום - ממשיכים בלי heartbeat");
 }
 
+// ========== משתנים גלובליים לsignal handlers ==========
+let globalLog = null;
+let globalLogToSheet = null;
+
 (async () => {
   try {
     const path = require("path");
     const { spawn, exec } = require("child_process");
-  const logToSheet = require("./log-to-sheets");
-  const config = require("./config.json");
+    const logToSheet = require("./log-to-sheets");
+    const config = require("./config.json");
+
+    // הפיכת פונקציות לגלובליות
+    globalLogToSheet = logToSheet;
 
     // בדיקה אם רץ עם פרמטר --force-late
     if (process.argv.includes('--force-late')) {
@@ -812,6 +1237,9 @@ function updateHeartbeat({ group, postFile, status, index }) {
       logStream.write(line + "\n");
     };
 
+    // הפיכת log לגלובלית לsignal handlers
+    globalLog = log;
+
     const day = new Date().getDay();
     const todayStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
@@ -819,41 +1247,14 @@ function updateHeartbeat({ group, postFile, status, index }) {
     log("🕯️ בודק אם צריך לכבות מחשב לקראת שבת...");
     const sabbathCheck = shouldShutdownForSabbath();
     if (sabbathCheck.should) {
-      log(`🕯️ זמן כיבוי לשבת! ${sabbathCheck.reason}`);
-      log(`⏰ כניסת שבת ב-${sabbathCheck.sabbathTime} (עוד ${sabbathCheck.minutesUntil} דקות)`);
-      await shutdownComputer(sabbathCheck.reason);
+      const eventType = sabbathCheck.isHolidayEve ? "חג" : "שבת";
+      log(`🕯️ זמן כיבוי ל${eventType}! ${sabbathCheck.reason}`);
+      log(`⏰ כניסת ${eventType} ב-${sabbathCheck.sabbathTime} (עוד ${sabbathCheck.minutesUntil} דקות)`);
+      await shutdownComputer(sabbathCheck.reason, sabbathCheck.isHolidayEve);
       return; // הקוד לא יגיע לכאן בגלל הכיבוי
     } else {
       log(`✅ ${sabbathCheck.reason}`);
     }
-
-    // חגי ישראל + ימי זיכרון 2024-2035
-    const jewishHolidaysAndMemorials = [
-      // 2024
-      "2024-04-22","2024-04-23","2024-04-28","2024-05-06","2024-05-13","2024-06-12","2024-10-02","2024-10-03","2024-10-11","2024-10-16","2024-10-23",
-      // 2025
-      "2025-04-13","2025-04-14","2025-04-19","2025-04-24","2025-05-01","2025-06-02","2025-10-03","2025-10-04","2025-10-12","2025-10-17","2025-10-24",
-      // 2026
-      "2026-04-02","2026-04-03","2026-04-08","2026-04-14","2026-04-21","2026-05-22","2026-09-22","2026-09-23","2026-10-01","2026-10-06","2026-10-13",
-      // 2027
-      "2027-03-22","2027-03-23","2027-03-28","2027-04-30","2027-05-06","2027-05-11","2027-09-11","2027-09-12","2027-09-20","2027-09-25","2027-10-02",
-      // 2028
-      "2028-04-10","2028-04-11","2028-04-16","2028-04-19","2028-04-26","2028-06-01","2028-09-30","2028-10-01","2028-10-09","2028-10-14","2028-10-21",
-      // 2029
-      "2029-03-30","2029-03-31","2029-04-05","2029-04-12","2029-04-18","2029-05-21","2029-09-19","2029-09-20","2029-09-28","2029-10-03","2029-10-10",
-      // 2030
-      "2030-04-18","2030-04-19","2030-04-24","2030-05-02","2030-05-08","2030-06-10","2030-10-08","2030-10-09","2030-10-17","2030-10-22","2030-10-29",
-      // 2031
-      "2031-04-07","2031-04-08","2031-04-13","2031-04-23","2031-04-29","2031-05-30","2031-09-27","2031-09-28","2031-10-06","2031-10-11","2031-10-18",
-      // 2032
-      "2032-03-26","2032-03-27","2032-04-01","2032-04-19","2032-04-25","2032-05-18","2032-09-15","2032-09-16","2032-09-24","2032-09-29","2032-10-06",
-      // 2033
-      "2033-04-14","2033-04-15","2033-04-20","2033-04-28","2033-05-04","2033-06-07","2033-10-04","2033-10-05","2033-10-13","2033-10-18","2033-10-25",
-      // 2034
-      "2034-04-04","2034-04-05","2034-04-10","2034-04-17","2034-04-23","2034-05-28","2034-09-24","2034-09-25","2034-10-03","2034-10-08","2034-10-15",
-      // 2035
-      "2035-03-24","2035-03-25","2035-03-30","2035-04-09","2035-04-15","2035-05-17","2035-09-13","2035-09-14","2035-09-22","2035-09-27","2035-10-04"
-    ];
 
     // לוגיקת ארגומנטים והתחלה מהקוד הישן
     const args = process.argv.slice(2);
@@ -861,7 +1262,8 @@ function updateHeartbeat({ group, postFile, status, index }) {
     const fileArgIndex = args.indexOf("--file");
     const skipHeartbeat = args.includes("--no-heartbeat"); // אופציה חדשה
 
-    // מייל התחלת פרסום מהקוד הישן
+    // מייל התחלת פרסום מהקוד הישן - בוטל
+    /*
     try {
       const now = new Date();
       const dateStr = now.toLocaleDateString('he-IL', { timeZone: 'Asia/Jerusalem' });
@@ -900,21 +1302,35 @@ function updateHeartbeat({ group, postFile, status, index }) {
       log("❌ שגיאה בשליחת מייל תחילת פרסום: " + e.message);
       await sendErrorMail("❌ שגיאה בשליחת מייל תחילת פרסום", e.message);
     }
+    */
 
     // בדיקה אם היום שבת, חג או יום זיכרון
     if (DAILY_SETTINGS.ENABLE_SABBATH_SHUTDOWN) {
       // מצב רגיל: לא פועל בשבת וחגים
       if (day === 6 || jewishHolidaysAndMemorials.includes(todayStr)) {
         log("🛑 שבת, חג או יום זיכרון — אין פרסום היום.");
+        log("💻 כיבוי מחשב אוטומטי יתחיל תוך 5 דקות...");
+        
+        // ספירה לאחור של 5 דקות (300 שניות)
+        for (let i = 300; i > 0; i--) {
+          const minutes = Math.floor(i / 60);
+          const seconds = i % 60;
+          process.stdout.write(`⏳ כיבוי מחשב בעוד ${minutes}:${seconds.toString().padStart(2, '0')}\r`);
+          await new Promise(r => setTimeout(r, 1000));
+        }
+        
+        console.log();
+        log("💤 כובה מחשב...");
+        
+        // כיבוי מחשב Windows
+        const { spawn } = require('child_process');
+        spawn('shutdown', ['/s', '/t', '0'], { detached: true });
+        
         process.exit(0);
       }
     } else {
-      // מצב מבוטל הגבלת שבת: פועל כל השבוע כולל שבת, אך לא בחגים
-      if (jewishHolidaysAndMemorials.includes(todayStr)) {
-        log("🛑 חג או יום זיכרון — אין פרסום היום.");
-        process.exit(0);
-      }
-      log("✅ הגבלת שבת מבוטלת: מפרסם כל השבוע כולל שבת (חוץ מחגים).");
+      // מצב מבוטל הגבלת שבת: פועל כל השבוע כולל שבת וחגים
+      log("✅ הגבלת שבת וחגים מבוטלת: מפרסם בכל יום כולל שבתות וחגים.");
     }
 
     async function countdown(seconds) {
@@ -956,6 +1372,7 @@ function updateHeartbeat({ group, postFile, status, index }) {
 
     // ============ לולאת פרסום חדשה עם resume, heartbeat וללא דוח יומי ============
     async function runPostsForToday(postsToday, isSpecificPost = false) {
+
       if (postsToday.length === 0) {
         log("✅ אין פוסטים מתאימים להיום.");
         await logToSheet("Day finished", "Success", "", "אין פוסטים מתאימים להיום");
@@ -988,7 +1405,18 @@ function updateHeartbeat({ group, postFile, status, index }) {
       }
 
       for (let pi = startPost; pi < postsToday.length; pi++) {
+        // בדיקת דגל עצירה חירום
+        if (emergencyStop) {
+          console.log("🛑 עצירה חירום - זוהו 8+ כשלונות רצופים, מפסיק את כל הפוסטים");
+          return; // יוצא מכל הפונקציה
+        }
+        
         const post = postsToday[pi];
+        
+        // הודעה על מערכת מעקב כשלונות רצופים
+        if (pi === startPost) {
+          log("🔍 מערכת מעקב כשלונות רצופים פעילה - התראה דחופה תישלח אחרי 8 כשלונות קבוצות שונות ברצף");
+        }
         
         // בדיקת עצירה לפי שעה בכל פוסט
         if (shouldStopByHour()) {
@@ -997,6 +1425,20 @@ function updateHeartbeat({ group, postFile, status, index }) {
           await sendErrorMail("🛑 עצירה בגלל שעה מאוחרת", "הפרסום נעצר בגלל שעה מאוחרת. ימשיך מחר.");
           updateHeartbeat({ group: "stopped-by-hour", postFile: post.filename, status: 'stopped', index: pi });
           return;
+        }
+
+        // ========== בדיקת כיבוי לשבת/חג במהלך הפרסום ==========
+        log("🕯️ בודק אם צריך לכבות מחשב לקראת שבת/חג במהלך הפרסום...");
+        const midProcessSabbathCheck = shouldShutdownForSabbath();
+        if (midProcessSabbathCheck.should) {
+          const eventType = midProcessSabbathCheck.isHolidayEve ? "חג" : "שבת";
+          log(`🕯️ זמן כיבוי ל${eventType} במהלך הפרסום! ${midProcessSabbathCheck.reason}`);
+          log(`⏰ כניסת ${eventType} ב-${midProcessSabbathCheck.sabbathTime} (עוד ${midProcessSabbathCheck.minutesUntil} דקות)`);
+          await logToSheet("Sabbath/Holiday shutdown", "Stopped", "", `כיבוי אוטומטי ל${eventType} במהלך הפרסום`);
+          await shutdownComputer(`במהלך פרסום - ${midProcessSabbathCheck.reason}`, midProcessSabbathCheck.isHolidayEve);
+          return; // הקוד לא יגיע לכאן בגלל הכיבוי
+        } else {
+          log(`✅ במהלך פרסום: ${midProcessSabbathCheck.reason}`);
         }
         
         // קביעת רשימת הקבוצות לפרסום (מוגבלת או מלאה)
@@ -1010,10 +1452,30 @@ function updateHeartbeat({ group, postFile, status, index }) {
         }
         
         for (let gi = (pi === startPost ? startGroup : 0); gi < groupsToPublish.length; gi++) {
+          // בדיקת דגל עצירה חירום
+          if (emergencyStop) {
+            console.log("🛑 עצירה חירום - זוהו 8+ כשלונות רצופים, מפסיק פרסום");
+            return; // יוצא מכל הפונקציה
+          }
+
+          // ========== בדיקת כיבוי לשבת/חג לפני כל קבוצה ==========
+          const groupSabbathCheck = shouldShutdownForSabbath();
+          if (groupSabbathCheck.should) {
+            const eventType = groupSabbathCheck.isHolidayEve ? "חג" : "שבת";
+            log(`🕯️ זמן כיבוי ל${eventType} לפני פרסום בקבוצה! ${groupSabbathCheck.reason}`);
+            log(`⏰ כניסת ${eventType} ב-${groupSabbathCheck.sabbathTime} (עוד ${groupSabbathCheck.minutesUntil} דקות)`);
+            
+            // הגדרת groupUrl לפני השימוש
+            const currentGroupUrl = groupsToPublish[gi] || 'Unknown group';
+            await logToSheet("Sabbath/Holiday shutdown", "Stopped", currentGroupUrl, `כיבוי אוטומטי ל${eventType} לפני פרסום בקבוצה`);
+            await shutdownComputer(`לפני פרסום בקבוצה - ${groupSabbathCheck.reason}`, groupSabbathCheck.isHolidayEve);
+            return; // הקוד לא יגיע לכאן בגלל הכיבוי
+          }
+          
           const groupUrl = groupsToPublish[gi];
 
           log(`📢 posting to group(${gi + 1}/${groupsToPublish.length}): ${groupUrl}`);
-          await logToSheet("Publishing to group", "Started", cleanGroupName(groupUrl), `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`, post.title || post.filename);
+          await logToSheet("Publishing to group", "Started", groupUrl, `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`, post.title || post.filename);
 
           // לפני ניסיון פרסום
           updateHeartbeat({
@@ -1027,7 +1489,7 @@ function updateHeartbeat({ group, postFile, status, index }) {
           let retryCount = 0;
           let success = false;
 
-          while (retryCount < 2 && !success) {
+          while (retryCount < 1 && !success) {
             await new Promise((resolve) => {
               // --- Heartbeat (ניטור) - בטוח ---
               try {
@@ -1061,31 +1523,46 @@ function updateHeartbeat({ group, postFile, status, index }) {
 
               // העברת פרמטר retry כדי שpost.js לא יתעד בניסיונות ביניים
               const isRetry = retryCount > 0;
-              const isLastAttempt = retryCount >= 1; // האם זה הניסיון האחרון (2/2)
+              const isLastAttempt = true; // תמיד הניסיון האחרון (1/1)
               const groupPostIdentifier = `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`;
-              const retryParam = isRetry ? "--retry" : "--first";
-              const lastAttemptParam = isLastAttempt ? "--last" : "--not-last";
-              const child = spawn("node", ["post.js", groupUrl, post.filename, retryParam, groupPostIdentifier, lastAttemptParam], { stdio: "inherit" });
+              const retryParam = "--first"; // תמיד הניסיון הראשון והאחרון
+              const lastAttemptParam = "--last"; // תמיד הניסיון האחרון
+              
+              log(`🚀 Starting post.js...`);
+              const child = spawn("node", ["post.js", groupUrl, post.filename, retryParam, groupPostIdentifier, lastAttemptParam], { 
+                stdio: "inherit"
+              });
 
-              // --- Timeout ---
-              const TIMEOUT = 5 * 60 * 1000;
+              // --- Graceful Timeout ---
+              const TIMEOUT = 13 * 60 * 1000;
+              let mailSent = false; // דגל למנוע שליחת מייל כפולה
+              let timeoutOccurred = false; // דגל לזיהוי timeout
               let timeoutId = setTimeout(async () => {
-                log(`⏰ Timeout! post.js לקח יותר מ־5 דקות. סוגר תהליך וממשיך...`);
-                child.kill("SIGKILL");
+                log(`⏰ Timeout! post.js לקח יותר מ־13 דקות. מנסה סגירה עדינה...`);
+                timeoutOccurred = true; // מסמן ש-timeout אירע
                 
-                // תיעוד timeout לגוגל שיטס אם זה הניסיון הסופי
-                if (retryCount >= 1) { // הניסיון הסופי
-                  try {
-                    const groupName = fs.readFileSync(CURRENT_GROUP_NAME_FILE, "utf-8").trim();
-                    await logToSheet("Post failed", "Error", cleanGroupName(groupName), `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`, post.title || post.filename, "הפרסום נתקע (timeout) ונעצר אוטומטית");
-                    log("📊 Timeout נרשם לגוגל שיטס");
-                  } catch (e) {
-                    log("⚠️ שגיאה ברישום timeout לגוגל שיט: " + e.message);
+                // ניסיון סגירה עדינה תחילה
+                child.kill("SIGTERM");
+                
+                // אם לא נסגר תוך 10 שניות - כיבוי בכוח
+                setTimeout(() => {
+                  if (!child.killed) {
+                    log(`🚨 Force killing post.js after graceful attempt failed`);
+                    child.kill("SIGKILL");
                   }
+                }, 10000);
+                
+                // תיעוד timeout לגוגל שיטס (תמיד הניסיון הסופי)
+                try {
+                  const groupName = fs.readFileSync(CURRENT_GROUP_NAME_FILE, "utf-8").trim();
+                  await logToSheet("Post failed", "Error", cleanGroupName(groupName), `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`, post.title || post.filename, "הפרסום נתקע (timeout) ונעצר אוטומטית");
+                  log("📊 Timeout נרשם לגוגל שיטס");
+                  log(`🔍 DEBUG: Timeout logged to sheet`);
+                } catch (e) {
+                  log("⚠️ שגיאה ברישום timeout לגוגל שיט: " + e.message);
                 }
                 
-                // שליחת מייל רק עבור timeout
-                sendErrorMail("⏰ Timeout - קבוצה נתקעה", `הקבוצה ${groupUrl} נתקעה ליותר מ־5 דקות ונעצרה אוטומטית.`);
+                // מייל timeout בוטל - יש רישום לגוגל שיטס ומנגנון 5 שגיאות ברצף
               }, TIMEOUT);
 
               // --- עדכון state ---
@@ -1122,11 +1599,45 @@ function updateHeartbeat({ group, postFile, status, index }) {
                 if (code === 0) {
                   success = true;
                   log(`✅ פורסם בהצלחה בקבוצה: ${groupName}`);
+                  
+                  // איפוס כשלונות רצופים בהצלחה
+                  resetConsecutiveFailures();
+                  
                   // רישום הצלחה לגוגל שיטס תמיד (בלי קשר לניסיון)
                   try {
                     const notesText = `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`;
-                    await logToSheet('Publishing finished', 'Success', cleanGroupName(groupName), notesText, post.title || post.filename);
-                    log("📊 הצלחה נרשמה לגוגל שיטס");
+                    
+                    // בדיקה אם יש נתוני סטטוס מקובץ זמני
+                    let statusData = null;
+                    const tempStatusPath = path.join(__dirname, 'temp-status-data.json');
+                    console.log("🔍 DEBUG - מחפש קובץ סטטוס זמני:", tempStatusPath);
+                    try {
+                      if (fs.existsSync(tempStatusPath)) {
+                        const statusText = fs.readFileSync(tempStatusPath, 'utf8');
+                        statusData = JSON.parse(statusText);
+                        // מחיקת הקובץ הזמני אחרי השימוש
+                        fs.unlinkSync(tempStatusPath);
+                        console.log("� DEBUG - נתוני סטטוס שנמצאו בקובץ זמני:", statusData);
+                        console.log("�📊 מוסיף נתוני סטטוס לגיליון:", statusData);
+                      } else {
+                        console.log("⚠️ קובץ נתוני סטטוס זמני לא קיים");
+                      }
+                    } catch (statusError) {
+                      console.log("⚠️ שגיאה בקריאת נתוני סטטוס:", statusError.message);
+                    }
+                    
+                    await logToSheet('Publishing finished', 'Success', cleanGroupName(groupName), notesText, post.title || post.filename, '', statusData);
+                    
+                    console.log("🔍 DEBUG - קריאה ל-logToSheet עם הפרמטרים:");
+                    console.log("   action: 'Publishing finished'");
+                    console.log("   status: 'Success'");
+                    console.log("   group:", cleanGroupName(groupName));
+                    console.log("   notes:", notesText);
+                    console.log("   postName:", post.title || post.filename);
+                    console.log("   errorLog: ''");
+                    console.log("   statusData:", statusData);
+                    
+                    log("📊 הצלחה נרשמה לגוגל שיטס" + (statusData ? " (עם נתוני סטטוס)" : " (ללא נתוני סטטוס)"));
                   } catch (e) {
                     log("⚠️ שגיאה ברישום הצלחה לגוגל שיט: " + e.message);
                   }
@@ -1165,11 +1676,15 @@ function updateHeartbeat({ group, postFile, status, index }) {
                   
                   log(`❌ שגיאה בפרסום לקבוצה ${groupName}: ${errorReason}`);
                   
-                  if (retryCount < 2) { // שינוי: retryCount < 2 כי כבר העלינו אותו
-                    log("🔁 מנסה שוב לפרסם לקבוצה...");
-                  } else {
-                    log("❌ מעבר לקבוצה הבאה אחרי כישלון סופי");
-                    // תיעוד השגיאה לגוגל שיטס בניסיון הסופי
+                  // רישום כשלון קבוצה למערכת המעקב
+                  recordGroupFailure(cleanGroupName(groupName), groupUrl, errorReason);
+                  
+                  log("❌ מעבר לקבוצה הבאה אחרי כישלון");
+                  log(`🔍 DEBUG: timeoutOccurred value: ${timeoutOccurred}, errorReason: ${errorReason}`);
+                  
+                  // תיעוד השגיאה לגוגל שיטס - רק אם לא היה timeout שכבר תיעד
+                  if (!timeoutOccurred || !errorReason.includes("timeout")) {
+                    log("🔍 DEBUG: Writing error to sheet (no timeout or different error)");
                     try {
                       await logToSheet("Post failed", "Error", cleanGroupName(groupName), `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`, post.title || post.filename, errorReason);
                       log("📊 שגיאה נרשמה לגוגל שיטס");
@@ -1177,31 +1692,26 @@ function updateHeartbeat({ group, postFile, status, index }) {
                       log("⚠️ שגיאה ברישום לגוגל שיט: " + e.message);
                       await sendErrorMail("⚠️ שגיאה ברישום לגוגל שיט", `לא ניתן לרשום את התוצאה לגוגל שיט: ${e.message}`);
                     }
-                    // שליחת מייל שגיאה
-                    try {
-                      await sendErrorMail("❌ שגיאה בפרסום פוסט", `הפרסום נכשל בקבוצה ${groupName}. סיבה: ${errorReason}`);
-                    } catch (e) {
-                      log("⚠️ שגיאה בשליחת מייל שגיאה: " + e.message);
-                    }
+                  } else {
+                    log("📊 Timeout כבר נרשם - מדלג על רישום נוסף");
                   }
+                  // מייל שגיאה בוטל - יש רישום לגוגל שיטס ומנגנון 5 שגיאות ברצף
                 }
 
                 // העלאת הcounter לפני ההשהיה
                 retryCount++;
 
-                // --- השהייה רנדומלית מה-config (רק בין קבוצות, לא בין ניסיונות retry) ---
+                // --- השהייה רנדומלית מה-config (רק בין קבוצות) ---
                 if (!skipDelay && success) { // רק אם הפרסום הצליח (ועוברים לקבוצה הבאה)
                   const delaySec = config.minDelaySec + Math.floor(Math.random() * (config.maxDelaySec - config.minDelaySec + 1));
                   const minutes = Math.floor(delaySec / 60);
                   const seconds = delaySec % 60;
                   log(`⏱ ממתין ${minutes} דקות ו־${seconds} שניות לפני הקבוצה הבאה...`);
                   await countdown(delaySec);
-                } else if (!success && retryCount < 2) {
-                  log(`⚡ דילוג על השהייה (ניסיון חוזר)`);
                 } else if (skipDelay) {
                   log(`⚡ דילוג על השהייה (--now)`);
                 } else if (!success) {
-                  log(`⚡ דילוג על השהייה (כישלון סופי)`);
+                  log(`⚡ דילוג על השהייה (כישלון)`);
                 }
 
                 resolve();
@@ -1215,27 +1725,19 @@ function updateHeartbeat({ group, postFile, status, index }) {
                 // עדכון heartbeat בשגיאה
                 updateHeartbeat({ group: groupUrl, postFile: post.filename, status: 'error', index: gi });
 
-                if (retryCount < 2) { // שינוי: retryCount < 2 כי כבר העלינו אותו
-                  log("🔁 מנסה שוב לפרסם לקבוצה...");
-                } else {
-                  log("⏭️ מדלג לקבוצה הבאה אחרי שגיאת תהליך...");
-                  
-                  // תיעוד שגיאת תהליך לגוגל שיטס בניסיון הסופי
-                  try {
-                    const groupName = fs.readFileSync(CURRENT_GROUP_NAME_FILE, "utf-8").trim();
-                    await logToSheet("Post failed", "Error", cleanGroupName(groupName), `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`, post.title || post.filename, `שגיאה בהרצת post.js: ${error.message}`);
-                    log("📊 שגיאת תהליך נרשמה לגוגל שיטס");
-                  } catch (e) {
-                    log("⚠️ שגיאה ברישום שגיאת תהליך לגוגל שיט: " + e.message);
-                  }
-                  
-                  // שליחת מייל שגיאה
-                  try {
-                    await sendErrorMail("❌ שגיאה בהרצת post.js", `שגיאה בהרצת post.js: ${error.message}`);
-                  } catch (e) {
-                    log("⚠️ שגיאה בשליחת מייל שגיאה: " + e.message);
-                  }
+                log("⏭️ מדלג לקבוצה הבאה אחרי שגיאת תהליך...");
+                
+                // תיעוד שגיאת תהליך לגוגל שיטס
+                try {
+                  const groupName = fs.readFileSync(CURRENT_GROUP_NAME_FILE, "utf-8").trim();
+                  await logToSheet("Post failed", "Error", cleanGroupName(groupName), `Group ${gi + 1}/${groupsToPublish.length} - Post ${pi + 1}/${postsToday.length}`, post.title || post.filename, `שגיאה בהרצת post.js: ${error.message}`);
+                  log("📊 שגיאת תהליך נרשמה לגוגל שיטס");
+                } catch (e) {
+                  log("⚠️ שגיאה ברישום שגיאת תהליך לגוגל שיט: " + e.message);
                 }
+                
+                // מייל שגיאה בוטל - יש רישום לגוגל שיטס ומנגנון 5 שגיאות ברצף
+                
                 resolve();
               });
             });
@@ -1353,7 +1855,8 @@ function updateHeartbeat({ group, postFile, status, index }) {
 
       // סיום יום: log-cost, מייל סגירה, כיבוי (רק אם לא פוסט ספציפי)
       if (!isSpecificPost) {
-        // שליחת מייל סיכום עם הנתונים החדשים
+        // שליחת מייל סיכום עם הנתונים החדשים - בוטל
+        /*
         try {
           const now = new Date();
           const endTimeStr = now.toLocaleTimeString('he-IL', { timeZone: 'Asia/Jerusalem' });
@@ -1427,14 +1930,16 @@ Postify
         } catch (mailError) {
           log("⚠️ שגיאה בשליחת מייל סיכום: " + mailError.message);
         }
+        */
         
         // ========== בדיקה נוספת לכיבוי שבת אחרי הפרסום ==========
         log("🕯️ בודק שוב אם צריך לכבות מחשב לקראת שבת...");
         const finalSabbathCheck = shouldShutdownForSabbath();
         if (finalSabbathCheck.should) {
-          log(`🕯️ זמן כיבוי לשבת אחרי הפרסום! ${finalSabbathCheck.reason}`);
-          log(`⏰ כניסת שבת ב-${finalSabbathCheck.sabbathTime} (עוד ${finalSabbathCheck.minutesUntil} דקות)`);
-          await shutdownComputer(`סיום פרסום - ${finalSabbathCheck.reason}`);
+          const eventType = finalSabbathCheck.isHolidayEve ? "חג" : "שבת";
+          log(`🕯️ זמן כיבוי ל${eventType} אחרי הפרסום! ${finalSabbathCheck.reason}`);
+          log(`⏰ כניסת ${eventType} ב-${finalSabbathCheck.sabbathTime} (עוד ${finalSabbathCheck.minutesUntil} דקות)`);
+          await shutdownComputer(`סיום פרסום - ${finalSabbathCheck.reason}`, finalSabbathCheck.isHolidayEve);
           return; // הקוד לא יגיע לכאן בגלל הכיבוי
         } else {
           log(`✅ אחרי פרסום: ${finalSabbathCheck.reason}`);
@@ -1482,11 +1987,34 @@ Postify
       const nonScheduledPosts = allPosts.filter(p => p.status !== 'scheduled');
       const pausedDueToDuplicates = [];
       
+      // בדוק אם יש פוסטים שכבר ב-paused בגלל כפילויות קודמות
+      const alreadyPausedDueToDuplicates = allPosts.filter(p => 
+        p.status === 'paused' && 
+        p.schedule_type && 
+        (p.schedule_type === 'weekly' || p.schedule_type === 'monthly' || p.schedule_type === 'one-time')
+      );
+      
+      if (alreadyPausedDueToDuplicates.length > 0) {
+        console.log(`ℹ️ נמצאו ${alreadyPausedDueToDuplicates.length} פוסטים שכבר ב-paused (ככל הנראה בגלל כפילויות קודמות)`);
+        alreadyPausedDueToDuplicates.forEach(p => {
+          console.log(`   - ${p.filename}: ${p.title || 'ללא שם'} (${p.schedule_type})`);
+        });
+      }
+      
+      // בדוק אם צריך למנוע כפילויות לפי מגבלת הפוסטים היומית
+      const maxPostsPerDay = DAILY_SETTINGS.MAX_POSTS_PER_DAY || 1;
+      const shouldPreventDuplicates = maxPostsPerDay === 1;
+      
+      console.log(`📊 מגבלת פוסטים יומית: ${maxPostsPerDay}`);
+      console.log(`🚫 מניעת כפילויות: ${shouldPreventDuplicates ? 'מופעלת' : 'מושבתת'} (${shouldPreventDuplicates ? 'פוסט אחד ביום' : 'מספר פוסטים מותר'})`);
+      
       // הוסף קודם פוסטים לא מתוזמנים (לא נבדקים לכפילויות)
       validPosts.push(...nonScheduledPosts);
       
-      // בדוק פוסטים מתוזמנים לכפילויות
-      for (const post of scheduledPosts) {
+      // בדוק פוסטים מתוזמנים לכפילויות - רק אם מוגדר פוסט אחד ביום
+      if (shouldPreventDuplicates) {
+        console.log('🔍 מבצע בדיקת כפילויות (מוגבל לפוסט אחד ביום)');
+        for (const post of scheduledPosts) {
         let hasConflict = false;
         let conflictDetails = [];
         
@@ -1552,10 +2080,16 @@ Postify
         }
         
         validPosts.push(post);
+        }
+      } else {
+        console.log('✅ מדלג על בדיקת כפילויות (מותרים מספר פוסטים ביום)');
+        // אם לא צריך למנוע כפילויות, פשוט הוסף את כל הפוסטים המתוזמנים
+        validPosts.push(...scheduledPosts);
       }
       
-      // שליחת מייל על כפילויות שזוהו (אם יש)
-      if (pausedDueToDuplicates.length > 0) {
+      // שליחת מייל על כפילויות שזוהו (אם יש) - רק אם הופעלה בדיקת כפילויות ונמצאו כפילויות
+      if (shouldPreventDuplicates && pausedDueToDuplicates.length > 0) {
+        console.log(`📧 נשלח מייל על ${pausedDueToDuplicates.length} פוסטים שעברו ל-paused עכשיו`);
         const emailContent = [
           `🚨 זוהו כפילויות תאריכים ב-${pausedDueToDuplicates.length} פוסטים`,
           "",
@@ -1577,10 +2111,14 @@ Postify
         // שליחת מייל (אסינכרוני - לא נעצור בגלל שגיאת מייל)
         sendErrorMail("🚨 זוהו כפילויות תאריכים בפוסטים", emailContent)
           .catch(e => console.log("❌ שגיאה בשליחת מייל כפילויות:", e.message));
+      } else if (shouldPreventDuplicates) {
+        console.log(`✅ לא נמצאו כפילויות חדשות לדיווח`);
+      } else {
+        console.log(`ℹ️ בדיקת כפילויות לא הופעלה (מותרים ${maxPostsPerDay} פוסטים ביום)`);
       }
       
       console.log(`✅ וולידציה הושלמה: ${validPosts.length} פוסטים סך הכל`);
-      if (pausedDueToDuplicates.length > 0) {
+      if (shouldPreventDuplicates && pausedDueToDuplicates.length > 0) {
         console.log(`⚠️ ${pausedDueToDuplicates.length} פוסטים הועברו ל-paused בגלל כפילויות`);
       }
       
@@ -1905,3 +2443,83 @@ Postify
     return;
   }
 })();
+
+// ========== Signal Handlers for Graceful Shutdown ==========
+let isShuttingDown = false;
+
+process.on('SIGINT', async () => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  
+  console.log('\n🔄 Received SIGINT - performing graceful shutdown...');
+  if (globalLog) globalLog('🔄 RUN-DAY: Graceful shutdown initiated by SIGINT');
+  
+  try {
+    // רישום כיבוי לגיוגל שיטס
+    if (globalLogToSheet) {
+      try {
+        await globalLogToSheet("System shutdown", "Info", "", "מערכת כובתה ידנית (SIGINT)");
+      } catch (e) {
+        console.error('Failed to log shutdown to sheets:', e.message);
+      }
+    }
+    
+    if (globalLog) globalLog('✅ Graceful shutdown completed');
+  } catch (error) {
+    console.error('Error during graceful shutdown:', error.message);
+  }
+  
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  
+  console.log('\n🔄 Received SIGTERM - performing graceful shutdown...');
+  if (globalLog) globalLog('🔄 RUN-DAY: Graceful shutdown initiated by SIGTERM');
+  
+  try {
+    // רישום כיבוי לגיוגל שיטס
+    if (globalLogToSheet) {
+      try {
+        await globalLogToSheet("System shutdown", "Info", "", "מערכת כובתה ידנית (SIGTERM)");
+      } catch (e) {
+        console.error('Failed to log shutdown to sheets:', e.message);
+      }
+    }
+    
+    if (globalLog) globalLog('✅ Graceful shutdown completed');
+  } catch (error) {
+    console.error('Error during graceful shutdown:', error.message);
+  }
+  
+  process.exit(0);
+});
+
+process.on('uncaughtException', async (error) => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  
+  console.error('🚨 Uncaught exception in run-day:', error.message);
+  if (globalLog) globalLog(`🚨 RUN-DAY: Uncaught exception: ${error.message}`);
+  
+  try {
+    // רישום שגיאה לגיוגל שיטס
+    if (globalLogToSheet) {
+      await globalLogToSheet("System error", "Error", "", `Uncaught exception: ${error.message}`);
+    }
+    
+    // שליחת מייל שגיאה דחופה
+    await sendErrorMail(
+      "🚨 RUN-DAY: Uncaught Exception", 
+      `שגיאה קריטית ב-run-day.js:\n\n${error.message}\n\n${error.stack}`
+    );
+  } catch (e) {
+    console.error('Failed to handle uncaught exception:', e.message);
+  }
+  
+  process.exit(1);
+});
+
+console.log("🎯 RUN-DAY initialized");

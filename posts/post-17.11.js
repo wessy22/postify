@@ -1021,8 +1021,8 @@ async function checkPostStatusAfterPublish(page, groupUrl, groupName) {
 const optimizeLinksForFacebook = (text) => {
   console.log("🔗 Optimizing links for Facebook recognition...");
   
-  // Regex לזיהוי URLs (כולל tinyurl, bit.ly, http/https וכו')
-  const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9-]+\.[a-zA-Z]{2,}\/[^\s]*)/gi;
+  // Regex לזיהוי URLs (רק http/https או www)
+  const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi;
   
   let optimizedText = text;
   let matches = text.match(urlRegex);
@@ -1031,8 +1031,10 @@ const optimizeLinksForFacebook = (text) => {
     console.log(`🔍 Found ${matches.length} potential links:`, matches);
     
     matches.forEach(url => {
-      // בדוק אם הקישור כבר בשורה נפרדת
+      // בדוק אם הקישור כבר מוקף ברווחים או שורות חדשות
       const urlIndex = optimizedText.indexOf(url);
+      if (urlIndex === -1) return; // הקישור כבר טופל
+      
       const beforeUrl = optimizedText.substring(0, urlIndex);
       const afterUrl = optimizedText.substring(urlIndex + url.length);
       
@@ -1040,33 +1042,28 @@ const optimizeLinksForFacebook = (text) => {
       const charBefore = beforeUrl.charAt(beforeUrl.length - 1);
       const charAfter = afterUrl.charAt(0);
       
-      let needsFixing = false;
       let newUrl = url;
+      let needsFixing = false;
       
-      // אם אין ירידת שורה לפני הקישור, הוסף
-      if (charBefore !== '\n' && charBefore !== '' && beforeUrl.trim() !== '') {
-        newUrl = '\n\n' + newUrl;
+      // אם אין רווח או שורה חדשה לפני הקישור, הוסף רווח
+      if (charBefore !== ' ' && charBefore !== '\n' && charBefore !== '' && beforeUrl.trim() !== '') {
+        newUrl = ' ' + newUrl;
         needsFixing = true;
+        console.log(`✅ Adding space before: ${url}`);
       }
       
-      // אם אין ירידת שורה אחרי הקישור, הוסף
-      if (charAfter !== '\n' && charAfter !== '' && afterUrl.trim() !== '') {
-        newUrl = newUrl + '\n\n';
+      // אם אין רווח או שורה חדשה אחרי הקישור, הוסף רווח
+      if (charAfter !== ' ' && charAfter !== '\n' && charAfter !== '' && afterUrl.trim() !== '') {
+        newUrl = newUrl + ' ';
         needsFixing = true;
+        console.log(`✅ Adding space after: ${url}`);
       }
       
       if (needsFixing) {
         optimizedText = optimizedText.replace(url, newUrl);
-        console.log(`✅ Optimized link: ${url} -> surrounded with newlines`);
       }
     });
   }
-  
-  // נקה רווחים מיותרים שנוצרו בתהליך
-  optimizedText = optimizedText
-    .replace(/\n{4,}/g, '\n\n\n') // מקסימום 3 ירידות שורה רצופות
-    .replace(/[ \t]+\n/g, '\n') // הסר רווחים לפני ירידת שורה
-    .replace(/\n[ \t]+/g, '\n'); // הסר רווחים אחרי ירידת שורה
   
   return optimizedText;
 };
@@ -1078,14 +1075,18 @@ const triggerLinkRecognition = async (page, textbox) => {
     
     // בדוק אם יש קישורים בטקסט
     const textContent = await page.evaluate(el => el.textContent, textbox);
-    const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9-]+\.[a-zA-Z]{2,}\/[^\s]*)/gi;
+    const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi;
     const links = textContent.match(urlRegex);
     
     if (links && links.length > 0) {
-      console.log(`🔍 Found ${links.length} links, checking if recognized...`);
+      console.log(`🔍 Found ${links.length} links:`, links);
+      
+      // המתן קצת יותר לפייסבוק לעבד את הקישורים
+      await new Promise(r => setTimeout(r, 2000));
       
       // בדוק אם יש קישורים כחולים (מזוהים)
-      const blueLinks = await page.$$('div[role="dialog"] a[href]');
+      let blueLinks = await page.$$('div[role="dialog"] a[href]');
+      console.log(`🔍 Blue links detected: ${blueLinks.length}/${links.length}`);
       
       if (blueLinks.length < links.length) {
         console.log(`⚠️ Only ${blueLinks.length}/${links.length} links recognized as blue links`);
@@ -1094,33 +1095,79 @@ const triggerLinkRecognition = async (page, textbox) => {
         // טריק 1: לחץ בסוף הטקסט ואז הוסף רווח ומחק
         await textbox.focus();
         await page.keyboard.press('End'); // לך לסוף הטקסט
-        await page.keyboard.type(' ', { delay: 100 });
-        await new Promise(r => setTimeout(r, 500));
+        await new Promise(r => setTimeout(r, 300));
+        await page.keyboard.type(' ', { delay: 50 });
+        await new Promise(r => setTimeout(r, 1000)); // המתן יותר זמן לפייסבוק לעבד
         await page.keyboard.press('Backspace');
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, 2000)); // המתן עוד קצת
         
-        // טריק 2: אם עדיין לא עובד, נסה select all + type again
-        const updatedBlueLinks = await page.$$('div[role="dialog"] a[href]');
-        if (updatedBlueLinks.length < links.length) {
-          console.log("🔄 Trying select all + minor edit trick...");
-          await page.keyboard.down('Control');
-          await page.keyboard.press('a');
-          await page.keyboard.up('Control');
+        // בדיקה שנייה
+        blueLinks = await page.$$('div[role="dialog"] a[href]');
+        console.log(`🔍 After first trick: ${blueLinks.length}/${links.length} blue links`);
+        
+        // טריק 2: אם עדיין לא עובד, נסה עם נקודה
+        if (blueLinks.length < links.length) {
+          console.log("🔄 Trying with dot trick...");
+          await textbox.focus();
+          await page.keyboard.press('End');
           await new Promise(r => setTimeout(r, 300));
-          
-          // הוסף נקודה ומחק אותה
-          await page.keyboard.type('.', { delay: 100 });
-          await new Promise(r => setTimeout(r, 500));
+          await page.keyboard.type('.', { delay: 50 });
+          await new Promise(r => setTimeout(r, 1000));
           await page.keyboard.press('Backspace');
-          await new Promise(r => setTimeout(r, 1500));
+          await new Promise(r => setTimeout(r, 2000));
+          
+          // בדיקה שלישית
+          blueLinks = await page.$$('div[role="dialog"] a[href]');
+          console.log(`🔍 After second trick: ${blueLinks.length}/${links.length} blue links`);
+        }
+        
+        // טריק 3: לחיצה על כל לינק ישירות (אם יש)
+        if (blueLinks.length < links.length) {
+          console.log("🔄 Trying direct link click trick...");
+          for (const link of links) {
+            try {
+              // נסה למצוא את הטקסט של הלינק בדף
+              const linkElement = await page.evaluateHandle((linkText) => {
+                const allElements = Array.from(document.querySelectorAll('div[role="dialog"] *'));
+                for (const el of allElements) {
+                  if (el.textContent && el.textContent.includes(linkText)) {
+                    return el;
+                  }
+                }
+                return null;
+              }, link);
+              
+              if (linkElement) {
+                // לחץ על האלמנט ואז חזרה לטקסטבוקס
+                await page.evaluate(el => {
+                  if (el) el.click();
+                }, linkElement);
+                await new Promise(r => setTimeout(r, 500));
+                await textbox.focus();
+                await new Promise(r => setTimeout(r, 500));
+              }
+            } catch (e) {
+              console.log(`⚠️ Could not click on link: ${link}`);
+            }
+          }
+          
+          // בדיקה רביעית
+          blueLinks = await page.$$('div[role="dialog"] a[href]');
+          console.log(`🔍 After third trick: ${blueLinks.length}/${links.length} blue links`);
         }
         
         // בדיקה סופית
-        const finalBlueLinks = await page.$$('div[role="dialog"] a[href]');
-        console.log(`✅ Final result: ${finalBlueLinks.length}/${links.length} links recognized`);
+        if (blueLinks.length >= links.length) {
+          console.log("✅ All links now recognized as blue links!");
+        } else {
+          console.log(`⚠️ Warning: Still only ${blueLinks.length}/${links.length} links recognized`);
+          console.log("🔧 This may affect link clickability in the post");
+        }
       } else {
         console.log("✅ All links already recognized as blue links");
       }
+    } else {
+      console.log("ℹ️ No links found in the text");
     }
   } catch (error) {
     console.log("⚠️ Error in link recognition trigger:", error.message);
@@ -1165,6 +1212,17 @@ const humanType = async (element, text, page) => {
     .replace(/\n{3,}/g, '\n\n') // הגבל שורות ריקות רצופות ל-2 לכל היותר
     .trim(); // הסר רווחים מתחילת וסוף הטקסט
 
+  // בדוק אם יש לינקים בטקסט
+  const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi;
+  const hasLinks = urlRegex.test(cleanText);
+  
+  if (hasLinks) {
+    console.log("🔗 Detected links in text - removing ALL HTML tags to prevent conflicts!");
+    // הסר את כל תגיות ה-HTML
+    cleanText = cleanText.replace(/<\/?[^>]+>/g, '');
+    console.log("✅ All HTML tags removed from text");
+  }
+
   // שיפור זיהוי קישורים - וודא שכל URL בשורה נפרדת
   cleanText = optimizeLinksForFacebook(cleanText);
 
@@ -1175,93 +1233,40 @@ const humanType = async (element, text, page) => {
   let firstNewlineHandled = false;
   const typoFrequency = 150 + Math.floor(Math.random() * 100);
   
-  // משתנים למעקב אחר עיצוב פעיל
-  let isBoldActive = false;
-  let isItalicActive = false;
-  
   // המר את הטקסט למערך של code points (כולל surrogate pairs)
   // זה מבטיח שאימוג'ים לא יתפצלו
   const textArray = Array.from(cleanText);
   
-  // עבור על כל תו כולל תגיות
+  // עבור על כל תו
   let i = 0;
+  let currentWord = '';
+  const urlPattern = /^(https?:\/\/|www\.)[^\s]+$/;
+  
   while (i < textArray.length) {
     const char = textArray[i];
-    // בדוק אם זה תגית HTML
-    if (char === '<') {
-      // צור מחרוזת מהמיקום הנוכחי ואילך לבדיקת תגית
-      const remainingText = textArray.slice(i).join('');
-      const tagMatch = remainingText.match(/^<(\/?)([bih12]+)>/);
-      
-      if (tagMatch) {
-        const isClosing = tagMatch[1] === '/';
-        const tagName = tagMatch[2];
-        
-        console.log(`🏷️ זיהוי תגית: ${isClosing ? 'סגירה' : 'פתיחה'} - ${tagName}`);
-        
-        // הפעל/כבה עיצוב לפי התגית
-        if (tagName === 'b') {
-          if (!isClosing && !isBoldActive) {
-            await page.keyboard.down('Control');
-            await page.keyboard.press('b');
-            await page.keyboard.up('Control');
-            isBoldActive = true;
-            console.log('✅ Bold הופעל');
-          } else if (isClosing && isBoldActive) {
-            await page.keyboard.down('Control');
-            await page.keyboard.press('b');
-            await page.keyboard.up('Control');
-            isBoldActive = false;
-            console.log('✅ Bold כובה');
-          }
-        } else if (tagName === 'i') {
-          if (!isClosing && !isItalicActive) {
-            await page.keyboard.down('Control');
-            await page.keyboard.press('i');
-            await page.keyboard.up('Control');
-            isItalicActive = true;
-            console.log('✅ Italic הופעל');
-          } else if (isClosing && isItalicActive) {
-            await page.keyboard.down('Control');
-            await page.keyboard.press('i');
-            await page.keyboard.up('Control');
-            isItalicActive = false;
-            console.log('✅ Italic כובה');
-          }
-        } else if (tagName === 'h1' || tagName === 'h2') {
-          // H1/H2 נשתמש ב-Bold
-          if (!isClosing && !isBoldActive) {
-            await page.keyboard.down('Control');
-            await page.keyboard.press('b');
-            await page.keyboard.up('Control');
-            isBoldActive = true;
-            console.log(`✅ ${tagName.toUpperCase()} הופעל כ-Bold`);
-          } else if (isClosing && isBoldActive) {
-            await page.keyboard.down('Control');
-            await page.keyboard.press('b');
-            await page.keyboard.up('Control');
-            isBoldActive = false;
-            console.log(`✅ ${tagName.toUpperCase()} כובה`);
-          }
-        }
-        
-        // דלג על התגית
-        i += tagMatch[0].length;
-        await new Promise(r => setTimeout(r, 100));
-        continue;
-      }
-    }
     
-    // התו כבר מוגדר למעלה: const char = textArray[i];
+    // בנה מילה נוכחית לזיהוי URLs
+    if (char !== ' ' && char !== '\n') {
+      currentWord += char;
+    } else {
+      // בדוק אם המילה שהסתיימה היא URL
+      if (currentWord && urlPattern.test(currentWord)) {
+        console.log(`🔗 Completed URL: ${currentWord}`);
+      }
+      currentWord = '';
+    }
     
     // סימולציה של שגיאת הקלדה
     if (charsTyped > 0 && charsTyped % typoFrequency === 0 && /[a-zא-ת]/i.test(char)) {
       const wrongChar = String.fromCharCode(char.charCodeAt(0) + 1);
-      await element.type(wrongChar, { delay: 20 });
+      await page.keyboard.type(wrongChar, { delay: 20 });
       await new Promise(r => setTimeout(r, 100 + Math.random() * 100));
-      await element.press('Backspace');
+      await page.keyboard.press('Backspace');
       await new Promise(r => setTimeout(r, 100));
     }
+
+    // שמור את המילה הקודמת לבדיקה
+    const wasUrl = currentWord && urlPattern.test(currentWord);
 
     // טיפול באנטר ראשון
     if (char === '\n' && !firstNewlineHandled) {
@@ -1270,8 +1275,28 @@ const humanType = async (element, text, page) => {
       await page.keyboard.press('Enter');
       await page.keyboard.up('Shift');
       firstNewlineHandled = true;
+      // אם הייתה URL לפני, המתן לפייסבוק לזהות אותה
+      if (wasUrl) {
+        console.log(`🔗 URL detected before first newline - waiting for Facebook...`);
+        await new Promise(r => setTimeout(r, 1500));
+      }
+    } else if (char === '\n') {
+      // שורות חדשות נוספות - גם Shift+Enter
+      await page.keyboard.down('Shift');
+      await page.keyboard.press('Enter');
+      await page.keyboard.up('Shift');
+      // אם הייתה URL לפני, המתן לפייסבוק לזהות אותה
+      if (wasUrl) {
+        console.log(`🔗 URL detected before newline - waiting for Facebook...`);
+        await new Promise(r => setTimeout(r, 1500));
+      }
+    } else if (char === ' ' && wasUrl) {
+      // רווח אחרי URL - כתוב אותו והמתן
+      await page.keyboard.type(char, { delay: 20 });
+      console.log(`🔗 Space after URL detected - waiting for Facebook...`);
+      await new Promise(r => setTimeout(r, 1500));
     } else {
-      await element.type(char, { delay: 20 });
+      await page.keyboard.type(char, { delay: 20 });
     }
     
     charsTyped++;
@@ -1286,18 +1311,10 @@ const humanType = async (element, text, page) => {
     }
   }
   
-  // ודא שהעיצוב כבוי בסוף
-  if (isBoldActive) {
-    await page.keyboard.down('Control');
-    await page.keyboard.press('b');
-    await page.keyboard.up('Control');
-    console.log('🔚 Bold כובה בסיום');
-  }
-  if (isItalicActive) {
-    await page.keyboard.down('Control');
-    await page.keyboard.press('i');
-    await page.keyboard.up('Control');
-    console.log('🔚 Italic כובה בסיום');
+  // בדוק אם המילה האחרונה היא URL
+  if (currentWord && urlPattern.test(currentWord)) {
+    console.log(`🔗 Detected final URL: ${currentWord}`);
+    await new Promise(r => setTimeout(r, 1500));
   }
 };
 
@@ -1596,7 +1613,7 @@ if (!composerFound) {
 
     // המתן לפייסבוק לעבד את הקישורים ולזהות אותם
     console.log("🔗 Waiting for Facebook to process links...");
-    await new Promise(r => setTimeout(r, 3000));
+    await new Promise(r => setTimeout(r, 5000)); // המתנה ארוכה יותר
 
     // בדוק אם יש קישורים שלא זוהו ונסה להעזר בטריק העריכה
     await triggerLinkRecognition(page, textbox);
@@ -1645,6 +1662,19 @@ if (!composerFound) {
       if (!fs.existsSync(tempFolder)) fs.mkdirSync(tempFolder, { recursive: true });
       await page.screenshot({ path: `C:\\temp\\image-paste-${path.basename(imagePath)}.png` });
     }
+    
+    // אם הוספנו תמונות, המתן עוד קצת לפייסבוק לעבד הכל
+    if (postData.images && postData.images.length > 0) {
+      const imageCount = postData.images.filter(img => {
+        const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'];
+        return imageExts.includes(path.extname(img).toLowerCase());
+      }).length;
+      
+      if (imageCount > 0) {
+        console.log(`⏳ Added ${imageCount} image(s), waiting extra time for Facebook to process...`);
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      }
+    }
 
     // הטיפול בקבצי וידאו
     const videoFiles = postData.images.filter(imagePath => {
@@ -1687,6 +1717,23 @@ if (!composerFound) {
           console.error(`❌ שגיאה בהעלאת וידאו ${videoPath}: ${error.message}`);
         }
       }
+    }
+
+    // המתנה נוספת לפני פרסום - חשוב מאוד!
+    // נותן לפייסבוק זמן לעבד את הלינק לגמרי, במיוחד אם יש תמונות
+    console.log("⏳ Waiting extra time before publish to ensure link is fully processed...");
+    await new Promise(resolve => setTimeout(resolve, 8000));
+    
+    // בדיקה אחרונה שהלינק עדיין כחול
+    try {
+      const blueLinks = await page.$$('div[role="dialog"] a[href]');
+      if (blueLinks.length > 0) {
+        console.log(`✅ Confirmed: ${blueLinks.length} blue link(s) detected before publishing`);
+      } else {
+        console.log("⚠️ Warning: No blue links detected before publishing");
+      }
+    } catch (e) {
+      console.log("⚠️ Could not verify blue links:", e.message);
     }
 
     console.log("📤 Publishing post...");
